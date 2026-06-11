@@ -1,0 +1,4 @@
+CREATE POLICY "allow_all_states" ON cay_shop_states
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
