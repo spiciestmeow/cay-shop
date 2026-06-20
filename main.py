@@ -35,6 +35,8 @@ ADMIN_IDS = [
     if x.strip().isdigit()
 ]
 
+CHANNEL_ID = os.environ.get("CHANNEL_ID", "-1004441073113")  # e.g. "@yourchannel" or "-1001234567890"
+
 MAIN_MENU = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton("🛒 Products")],
@@ -173,6 +175,11 @@ CATEGORY_EMOJIS = [
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
+def mask_user_id(user_id: int) -> str:
+    s = str(user_id)
+    if len(s) <= 5:
+        return s[:2] + "***" + s[-1:]
+    return s[:3] + "***" + s[-2:]
 
 def build_emoji_picker() -> InlineKeyboardMarkup:
     rows = []
@@ -1249,6 +1256,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await db.update_product_stock(prod_id, prod["stock"] - 1)
 
         await query.answer("✅ Purchase successful!", show_alert=True)
+        import random, string
+        order_no = ''.join(random.choices(string.ascii_uppercase + string.digits, k=14))
+
         await query.message.edit_text(
             f"✅ <b>Purchase Successful!</b>\n\n"
             f"📦 <b>{prod['name']}</b>\n"
@@ -1259,6 +1269,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"{delivery_url}\n\n"
             f"⏳ Duration: {prod.get('duration') or '—'}\n"
             f"🛡 Warranty: {prod.get('warranty') or 'No warranty'}\n\n"
+            f"🧾 <b>Order No.:</b> <code>{order_no}</code>\n\n"
             f"<i>Save this link — it won't be shown again.</i>",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
@@ -1267,24 +1278,42 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             ]),
         )
 
-        # Notify admin of the sale
-        tg_user = update.effective_user
-        username = f"@{tg_user.username}" if tg_user.username else "no username"
-        for admin_id in ADMIN_IDS:
-            try:
-                await context.bot.send_message(
-                    chat_id=admin_id,
-                    text=(
-                        f"🛒 <b>New Sale!</b>\n\n"
-                        f"👤 {tg_user.full_name} ({username})\n"
-                        f"🆔 <code>{user_id}</code>\n"
-                        f"📦 {prod['name']}\n"
-                        f"💰 ${price:.2f}"
-                    ),
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
+        # ── Process order number and total purchases ──
+        import random, string
+        order_no = ''.join(random.choices(string.ascii_uppercase + string.digits, k=14))
+        cat = await db.get_category(prod["category_id"])
+
+        if not is_admin(user_id):
+            # Get real total purchases count (excluding admin test orders)
+            db_user_fresh = await db.get_user(user_id)
+            total_purchases = int(db_user_fresh.get("total_purchases", 1)) if db_user_fresh else 1
+
+            admin_msg = (
+                f"<blockquote>"
+                f"🎉 <b>New Purchase!</b>\n\n"
+                f"📧 <b>Service:</b> {cat['name'] if cat else '—'}\n"
+                f"👤 <b>By:</b> <code>{mask_user_id(user_id)}</code>\n"
+                f"🎁 <b>Plan:</b> {prod['name']}\n"
+                f"🧾 <b>Order No.:</b> <code>{order_no}</code>\n"
+                f"🔢 <b>QTY:</b> 1\n"
+                f"📊 <b>Total Purchase!:</b> {total_purchases}"
+                f"</blockquote>"
+            )
+            for admin_id in ADMIN_IDS:
+                try:
+                    await context.bot.send_message(chat_id=admin_id, text=admin_msg, parse_mode="HTML")
+                except Exception:
+                    pass
+
+            if CHANNEL_ID:
+                try:
+                    await context.bot.send_message(
+                        chat_id=CHANNEL_ID,
+                        text=admin_msg,
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
         return
 
     if data == "topup_from_buy":
@@ -1502,11 +1531,40 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
         except Exception:
             pass
+
+        amount_usd = round(amount / 56.0, 2)
+
+        # ── Notify user with actual amount ──
         await context.bot.send_message(
             chat_id=target_user_id,
-            text=f"✅ <b>Deposit confirmed!</b>\n\n₱{amount:.2f} has been credited to your balance.",
+            text=(
+                f"🤑 <b>New Credits Added!</b>\n\n"
+                f"<blockquote>"
+                f"👤 <b>User:</b> <code>{mask_user_id(target_user_id)}</code>\n"
+                f"💵 <b>Amount:</b> ${amount_usd:.2f} (₱{amount:.2f})\n"
+                f"💳 <b>Method:</b> GCash Deposit 🇵🇭"
+                f"</blockquote>"
+            ),
             parse_mode="HTML",
         )
+
+        # ── Notify channel with emoji instead of amount ──
+        if CHANNEL_ID:
+            try:
+                await context.bot.send_message(
+                    chat_id=CHANNEL_ID,
+                    text=(
+                        f"🤑 <b>New Credits Added!</b>\n\n"
+                        f"<blockquote>"
+                        f"👤 <b>User:</b> <code>{mask_user_id(target_user_id)}</code>\n"
+                        f"💵 <b>Amount:</b> 🤑\n"
+                        f"💳 <b>Method:</b> GCash Deposit 🇵🇭"
+                        f"</blockquote>"
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
         return
 
     if data.startswith("admin_reject_gcash_"):

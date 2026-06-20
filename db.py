@@ -1,10 +1,12 @@
 import os
+import random
+import string
+
 from supabase import create_client, Client
 
 from dotenv import load_dotenv
 
 load_dotenv()
-
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
@@ -18,6 +20,8 @@ TRANSACTIONS_TABLE = "cay_shop_transactions"
 def _client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
+def generate_order_number() -> str:
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=14))
 
 # ─── CATEGORIES ──────────────────────────────────────────────────────────────
 
@@ -226,28 +230,32 @@ def get_next_tier(total_spent: float) -> dict | None:
             return tier
     return None
 
-async def record_purchase(user_id: int, amount_usd: float, product_name: str = "") -> None:
+async def record_purchase(user_id: int, amount_usd: float, product_name: str = "") -> str:
     c = _client()
     res = c.table(USERS_TABLE).select("balance, total_spent, total_purchases").eq("user_id", user_id).limit(1).execute()
     if not res.data:
-        return
+        return ""
     row = res.data[0]
     new_balance = round(float(row.get("balance") or 0) - amount_usd, 2)
     new_spent = round(float(row.get("total_spent") or 0) + amount_usd, 2)
     new_purchases = int(row.get("total_purchases") or 0) + 1
+
     c.table(USERS_TABLE).update({
         "balance": new_balance,
         "total_spent": new_spent,
         "total_purchases": new_purchases,
     }).eq("user_id", user_id).execute()
 
-    # ← Record the purchase transaction
+    order_no = generate_order_number()
+
     await add_transaction(
         user_id=user_id,
         type="purchase",
         amount_usd=amount_usd,
         description=f"Purchase: {product_name}",
+        order_no=order_no,
     )
+    return order_no, new_purchases
 
 async def add_transaction(
     user_id: int,
@@ -255,6 +263,7 @@ async def add_transaction(
     amount_usd: float,
     amount_php: float = None,
     description: str = "",
+    order_no: str = "",
 ) -> None:
     c = _client()
     row = {
@@ -265,8 +274,9 @@ async def add_transaction(
     }
     if amount_php is not None:
         row["amount_php"] = amount_php
+    if order_no:
+        row["order_no"] = order_no
     c.table(TRANSACTIONS_TABLE).insert(row).execute()
-
 
 async def get_transactions(user_id: int, limit: int = 10) -> list[dict]:
     c = _client()
