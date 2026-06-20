@@ -79,7 +79,8 @@ PAYMENT_METHODS_TEXT = (
     "• <b>BEP20 (USDT)</b> — BNB Smart Chain\n"
     "• <b>Polygon (USDT)</b> — Polygon Network\n"
     "• <b>TRC20 (USDT)</b> — Tron Network\n"
-    "• ⭐ <b>Telegram Stars</b>\n\n"
+    "• ⭐ <b>Telegram Stars</b>\n"
+    "• 🇵🇭 <b>GCash</b> — Philippines\n\n"
     "<blockquote>🔗 <b>Binance is supported</b></blockquote>\n"
     "<i>When withdrawing from Binance, make sure to select the <b>exact same network</b> shown here.</i>\n\n"
     "<b>Examples:</b>\n"
@@ -455,19 +456,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
     elif text == "💰 Top up balance":
-        if not is_admin(user_id):
             await update.message.reply_text(
-                "🚧 <b>Top up balance is currently unavailable.</b>\n\n"
-                "We're still setting things up — please check back soon!",
+                PAYMENT_METHODS_TEXT,
                 parse_mode="HTML",
-                reply_markup=MAIN_MENU,
+                reply_markup=build_payment_methods_keyboard(),
             )
-            return
-        await update.message.reply_text(
-            PAYMENT_METHODS_TEXT,
-            parse_mode="HTML",
-            reply_markup=build_payment_methods_keyboard(),
-        )
 
     elif text == "🎫 Redeem Code":
         await update.message.reply_text(
@@ -737,11 +730,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.message.reply_text("❌ Cancelled.", reply_markup=MAIN_MENU)
         return
 
-    # ── Top up balance — admin only for now ──
-    if data in ("payment_binance", "payment_polygon", "payment_trc20", "payment_stars",
-                "payment_gcash", "payment_back", "gcash_paid", "gcash_cancel"):
+    # ── Crypto/Stars top-up — admin only for now. GCash stays open to all users. ──
+    if data in ("payment_binance", "payment_polygon", "payment_trc20"):
         if not is_admin(user_id):
-            await query.answer("🚧 Top up balance is currently unavailable.", show_alert=True)
+            await query.answer("🚧 This payment method is currently unavailable.", show_alert=True)
             return
 
     if data == "payment_gcash":
