@@ -327,6 +327,7 @@ async def admin_products_keyboard(cat_id: int):
 def build_admin_prod_detail_text(prod: dict) -> str:
     stock_icon = "✅" if prod["stock"] > 0 else "❌"
     demo = prod.get("demo_url") or "—"
+    delivery_url = prod.get("delivery_url") or "—"
     desc = (prod.get("description") or "—").strip()
     return (
         f"📦 <b>#{prod['id']} {prod['name']}</b>\n\n"
@@ -335,7 +336,8 @@ def build_admin_prod_detail_text(prod: dict) -> str:
         f"⏳ <b>Duration:</b> {prod.get('duration') or '—'}\n"
         f"🛡 <b>Warranty:</b> {prod.get('warranty') or 'No warranty'}\n"
         f"📬 <b>Delivery:</b> {prod.get('delivery') or 'LINK'}\n"
-        f"🎮 <b>Demo URL:</b> {demo}\n\n"
+        f"🎮 <b>Demo URL:</b> {demo}\n"
+        f"🔗 <b>Delivery URL:</b> {delivery_url}\n\n"
         f"📝 <b>Description:</b>\n{desc}"
     )
 
@@ -356,6 +358,9 @@ def admin_prod_edit_keyboard(prod_id: int, cat_id: int) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("📬 Delivery",     callback_data=f"admin_editprod_delivery_{prod_id}"),
             InlineKeyboardButton("🎮 Demo URL",     callback_data=f"admin_editprod_demo_{prod_id}"),
+        ],
+        [
+            InlineKeyboardButton("🔗 Delivery URL", callback_data=f"admin_editprod_deliveryurl_{prod_id}"),  # ← new
         ],
         [InlineKeyboardButton("🗑 Delete Product",  callback_data=f"admin_delprod_{prod_id}")],
         [InlineKeyboardButton("⬅️ Back",            callback_data=f"admin_prodcat_{cat_id}")],
@@ -644,8 +649,8 @@ async def _process_admin_input(update: Update, user_id: int, ud: dict) -> None:
         )
 
     elif awaiting in ("prod_edit_name", "prod_edit_price", "prod_edit_desc",
-                      "prod_edit_stock", "prod_edit_duration", "prod_edit_warranty",
-                      "prod_edit_delivery", "prod_edit_demo"):
+                    "prod_edit_stock", "prod_edit_duration", "prod_edit_warranty",
+                    "prod_edit_delivery", "prod_edit_demo", "prod_edit_deliveryurl"):
         prod_id = ud.pop("edit_prod_id", None)
         ud.pop("awaiting", None)
         await db.set_session(user_id, ud)
@@ -662,6 +667,7 @@ async def _process_admin_input(update: Update, user_id: int, ud: dict) -> None:
             "prod_edit_warranty": ("warranty",    lambda v: v),
             "prod_edit_delivery": ("delivery",    lambda v: v),
             "prod_edit_demo":     ("demo_url",    lambda v: "" if v == "-" else v),
+            "prod_edit_deliveryurl": ("delivery_url", lambda v: "" if v == "-" else v),  # ← new
         }
         db_field, converter = field_db_map[awaiting]
         try:
@@ -1091,16 +1097,108 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.answer()
             await query.message.edit_text(
                 f"❌ <b>Insufficient balance.</b>\n\n"
-                f"Required: {price:.2f} USD\n"
-                f"Your balance: {balance:.2f} USD",
+                f"Required: <b>${price:.2f}</b>\n"
+                f"Your balance: <b>${balance:.2f}</b>\n\n"
+                f"Please top up your balance to continue.",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💰 Top up balance", callback_data="topup_from_buy")],
                     [InlineKeyboardButton("⬅️ Back", callback_data=f"user_prod_{prod_id}")],
                 ]),
             )
             return
-        # TODO: deduct balance and deliver product
-        await query.answer("✅ Purchase processing — coming soon!", show_alert=True)
+
+        delivery_url = (prod.get("delivery_url") or "").strip()
+        if not delivery_url:
+            await query.answer("⚠️ This product has no delivery URL set. Please contact support.", show_alert=True)
+            return
+
+        # ── Confirm screen before charging ──
+        await query.answer()
+        await query.message.edit_text(
+            f"🛒 <b>Confirm Purchase</b>\n\n"
+            f"📦 Product: <b>{prod['name']}</b>\n"
+            f"💰 Price: <b>${price:.2f}</b>\n"
+            f"👛 Your balance: <b>${balance:.2f}</b>\n"
+            f"💳 Balance after: <b>${round(balance - price, 2):.2f}</b>\n\n"
+            f"Tap <b>Confirm</b> to complete your purchase.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_buy_{prod_id}")],
+                [InlineKeyboardButton("❌ Cancel",  callback_data=f"user_prod_{prod_id}")],
+            ]),
+        )
+        return
+
+    if data.startswith("confirm_buy_"):
+        prod_id = int(data.split("_")[2])
+        prod = await db.get_product(prod_id)
+        if not prod:
+            await query.answer("Product not found.", show_alert=True)
+            return
+        if prod["stock"] <= 0:
+            await query.answer("❌ Out of stock.", show_alert=True)
+            return
+        db_user = await db.get_user(user_id)
+        balance = float(db_user.get("balance", 0)) if db_user else 0.0
+        price = prod["price"]
+        if balance < price:
+            await query.answer("❌ Insufficient balance.", show_alert=True)
+            return
+
+        delivery_url = (prod.get("delivery_url") or "").strip()
+        if not delivery_url:
+            await query.answer("⚠️ No delivery URL. Contact support.", show_alert=True)
+            return
+
+        # ── Process the purchase ──
+        await db.record_purchase(user_id, price)
+        await db.update_product_stock(prod_id, prod["stock"] - 1)
+
+        await query.answer("✅ Purchase successful!", show_alert=True)
+        await query.message.edit_text(
+            f"✅ <b>Purchase Successful!</b>\n\n"
+            f"📦 <b>{prod['name']}</b>\n"
+            f"💰 <b>${price:.2f}</b> deducted from your balance\n\n"
+            f"🔗 <b>Your delivery link:</b>\n"
+            f"{delivery_url}\n\n"
+            f"⏳ Duration: {prod.get('duration') or '—'}\n"
+            f"🛡 Warranty: {prod.get('warranty') or 'No warranty'}\n\n"
+            f"<i>Save this link — it won't be shown again.</i>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🛒 Shop more", callback_data="back_to_products")],
+                [InlineKeyboardButton("👤 My Profile", callback_data="profile_back")],
+            ]),
+        )
+
+        # Notify admin of the sale
+        tg_user = update.effective_user
+        username = f"@{tg_user.username}" if tg_user.username else "no username"
+        for admin_id in ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=(
+                        f"🛒 <b>New Sale!</b>\n\n"
+                        f"👤 {tg_user.full_name} ({username})\n"
+                        f"🆔 <code>{user_id}</code>\n"
+                        f"📦 {prod['name']}\n"
+                        f"💰 ${price:.2f}"
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+        return
+
+    if data == "topup_from_buy":
+        await query.answer()
+        await query.message.edit_text(
+            PAYMENT_METHODS_TEXT,
+            parse_mode="HTML",
+            reply_markup=build_payment_methods_keyboard(),
+        )
         return
 
     # ── ADMIN PANEL ──────────────────────────────────────────────────────────
@@ -1160,6 +1258,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "warranty": ("prod_edit_warranty", "🛡 Enter a new <b>warranty</b>:"),
             "delivery": ("prod_edit_delivery", "📬 Enter a new <b>delivery type</b> (e.g. <code>LINK</code>, <code>ACCOUNT</code>):"),
             "demo":     ("prod_edit_demo",     "🎮 Enter a new <b>demo URL</b>. Send <code>-</code> to clear:"),
+            "deliveryurl": ("prod_edit_deliveryurl", "🔗 Enter the <b>delivery URL</b> users receive after purchase. Send <code>-</code> to clear:"),
         }
         if field not in field_map:
             await query.answer()

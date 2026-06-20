@@ -80,7 +80,8 @@ async def add_product(
     duration: str = "",
     warranty: str = "No warranty",
     delivery: str = "LINK",
-    demo_url: str = "",          # ← add this
+    demo_url: str = "",  
+    delivery_url: str = "",
 ) -> int:
     c = _client()
     res = c.table(PRODUCTS_TABLE).insert({
@@ -92,7 +93,8 @@ async def add_product(
         "duration": duration,
         "warranty": warranty,
         "delivery": delivery,
-        "demo_url": demo_url,    # ← add this
+        "demo_url": demo_url, 
+        "delivery_url": delivery_url,
     }).execute()
     return res.data[0]["id"]
 
@@ -214,3 +216,19 @@ def get_next_tier(total_spent: float) -> dict | None:
         if tier["min"] > total_spent:
             return tier
     return None
+
+async def record_purchase(user_id: int, amount_usd: float) -> None:
+    """Deduct balance and increment total_spent + total_purchases."""
+    c = _client()
+    res = c.table(USERS_TABLE).select("balance, total_spent, total_purchases").eq("user_id", user_id).limit(1).execute()
+    if not res.data:
+        return
+    row = res.data[0]
+    new_balance = round(float(row.get("balance") or 0) - amount_usd, 2)
+    new_spent = round(float(row.get("total_spent") or 0) + amount_usd, 2)
+    new_purchases = int(row.get("total_purchases") or 0) + 1
+    c.table(USERS_TABLE).update({
+        "balance": new_balance,
+        "total_spent": new_spent,
+        "total_purchases": new_purchases,
+    }).eq("user_id", user_id).execute()
