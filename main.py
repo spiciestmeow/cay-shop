@@ -20,6 +20,7 @@ from telegram.ext import (
     PicklePersistence,
 )
 from telegram.error import Conflict, NetworkError
+import gcash_topup
 import db
 
 logging.basicConfig(
@@ -72,6 +73,88 @@ HELP_TEXT = (
     "⏳ You will receive a response once your request has been reviewed"
 )
 
+# ─── PAYMENT METHODS ──────────────────────────────────────────────────────
+PAYMENT_METHODS_TEXT = (
+    "<blockquote>💳 <b>Choose your preferred payment method:</b></blockquote>\n"
+    "• <b>BEP20 (USDT)</b> — BNB Smart Chain\n"
+    "• <b>Polygon (USDT)</b> — Polygon Network\n"
+    "• <b>TRC20 (USDT)</b> — Tron Network\n"
+    "• ⭐ <b>Telegram Stars</b>\n\n"
+    "<blockquote>🔗 <b>Binance is supported</b></blockquote>\n"
+    "<i>When withdrawing from Binance, make sure to select the <b>exact same network</b> shown here.</i>\n\n"
+    "<b>Examples:</b>\n"
+    "• TRC20 → Tron (TRC20)\n"
+    "• BEP20 → BNB Smart Chain (BEP20)\n"
+    "• Polygon → Polygon\n\n"
+    "<blockquote>🚨 <b>How to send from Binance:</b>\n"
+    "1️⃣ Open Binance → <b>Wallets</b> → <b>Withdraw</b>\n"
+    "2️⃣ Select <b>USDT</b>\n"
+    "3️⃣ Paste the <b>wallet address provided</b>\n"
+    "4️⃣ Choose the <b>matching network</b>\n"
+    "5️⃣ Enter the amount and confirm the withdrawal</blockquote>\n\n"
+    "<blockquote>✅ <i><b>It is Auto Pay, your order is completed within a few minutes.</b></i></blockquote>\n\n"
+    "⚠️ <tg-spoiler><b>Sending through the wrong network may result in loss of funds.</b></tg-spoiler>"
+)
+
+BINANCE_PAY_INFO = (
+    "💳 <b>Choose your preferred payment method:</b>\n\n"
+    "• <code>BEP20 (USDT)</code> — BNB Smart Chain\n"
+    "• <code>Polygon (USDT)</code> — Polygon Network\n"
+    "• <code>TRC20 (USDT)</code> — Tron Network\n"
+    "• ⭐ <code>Telegram Stars</code>\n\n"
+    "🔗 <b>Binance is supported</b>\n\n"
+    "When withdrawing from Binance, make sure to select the <b>exact same network</b> shown here.\n\n"
+    "<b>Examples:</b>\n"
+    "• <code>TRC20</code> → Tron (TRC20)\n"
+    "• <code>BEP20</code> → BNB Smart Chain (BEP20)\n"
+    "• <code>Polygon</code> → Polygon\n\n"
+    "🚨 <b>How to send from Binance:</b>\n"
+    "1️⃣ Open Binance → Wallets → Withdraw\n"
+    "2️⃣ Select USDT\n"
+    "3️⃣ Paste the wallet address provided\n"
+    "4️⃣ Choose the <b>matching network</b>\n"
+    "5️⃣ Enter the amount and confirm\n\n"
+    "✅ <b>It is Auto Pay</b> — your order is completed within a few minutes.\n\n"
+    "⚠️ <b>Warning:</b> Sending through the wrong network may result in loss of funds."
+)
+
+POLYGON_INFO = (
+    "🔗 <b>Polygon (USDT)</b>\n\n"
+    "<b>Network:</b> Polygon Network\n\n"
+    "<b>How to send:</b>\n"
+    "1️⃣ Open your wallet\n"
+    "2️⃣ Select Polygon Network\n"
+    "3️⃣ Paste the wallet address provided\n"
+    "4️⃣ Enter the amount\n"
+    "5️⃣ Confirm and send\n\n"
+    "✅ <b>Auto Pay:</b> Your order is completed within a few minutes."
+)
+
+TRC20_INFO = (
+    "🔗 <b>TRC20 (USDT)</b>\n\n"
+    "<b>Network:</b> Tron Network\n\n"
+    "<b>How to send:</b>\n"
+    "1️⃣ Open your wallet\n"
+    "2️⃣ Select Tron Network\n"
+    "3️⃣ Paste the wallet address provided\n"
+    "4️⃣ Enter the amount\n"
+    "5️⃣ Confirm and send\n\n"
+    "✅ <b>Auto Pay:</b> Your order is completed within a few minutes."
+)
+
+TELEGRAM_STARS_INFO = (
+    "We would like to inform you that if you are unable to make a payment via Binance, you can complete the payment using Telegram Stars.\n\n"
+    "📌 <b>Payment Method:</b>\n"
+    "You can send Stars as a gift to the following username:\n"
+    "@caydigitals\n\n"
+    "💰 <b>Available Packages:</b>\n\n"
+    "- 300 Stars = $3\n"
+    "- 500 Stars = $6\n"
+    "- 1200 Stars = $16\n\n"
+    "📩 After completing the payment, you will receive a Redeem Code in the same chat from the support team.\n\n"
+    "Thank you for your cooperation 🌟"
+)
+
 MENU_BUTTONS = {
     "🛒 Products", "👤 Profile", "🎁 Invite Center",
     "💰 Top up balance", "🎫 Redeem Code", "📋 Bot Policy", "❓ Help",
@@ -105,6 +188,16 @@ def get_emoji_by_index(index: int) -> str:
         return CATEGORY_EMOJIS[index]
     return "📦"
 
+
+def build_payment_methods_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("💳 Binance Pay", callback_data="payment_binance")],
+        [InlineKeyboardButton("🔗 Polygon (USDT)", callback_data="payment_polygon")],
+        [InlineKeyboardButton("🔗 TRC20 (USDT)", callback_data="payment_trc20")],
+        [InlineKeyboardButton("⭐ Telegram Stars", callback_data="payment_stars")],
+        [InlineKeyboardButton("🇵🇭 GCash", callback_data="payment_gcash")],
+        [InlineKeyboardButton("✕ Close", callback_data="close")],
+    ])  
 
 # ─── USER-FACING KEYBOARDS ───────────────────────────────────────────────────
 
@@ -276,7 +369,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         full_name=tg_user.full_name,
     )
     await update.message.reply_text(
-        "👋 Welcome to CayShop Bot!\n\nI'm here to help you purchase subscriptions and digital services easily and securely.",
+        "<blockquote><b>👋 Welcome to CayShop Bot!</b></blockquote>\nI'm here to help you purchase subscriptions and digital services easily and securely.",
+        parse_mode="HTML",
         reply_markup=MAIN_MENU,
     )
 
@@ -320,6 +414,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     text = update.message.text
     user_id = update.effective_user.id
 
+    # ── GCash amount entry (any user, not just admins) ──
+    ud = await db.get_session(user_id)
+    if ud.get("awaiting") == "gcash_amount":
+        await gcash_topup.handle_gcash_amount_input(update, context, ud)
+        return
+
     if is_admin(user_id) and text not in MENU_BUTTONS:
         ud = await db.get_session(user_id)
         if ud.get("awaiting"):
@@ -346,10 +446,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
     elif text == "💰 Top up balance":
+        if not is_admin(user_id):
+            await update.message.reply_text(
+                "🚧 <b>Top up balance is currently unavailable.</b>\n\n"
+                "We're still setting things up — please check back soon!",
+                parse_mode="HTML",
+                reply_markup=MAIN_MENU,
+            )
+            return
         await update.message.reply_text(
-            "💰 <b>Top Up Balance</b>\n\nChoose a payment method to add funds to your account.",
+            PAYMENT_METHODS_TEXT,
             parse_mode="HTML",
-            reply_markup=MAIN_MENU,
+            reply_markup=build_payment_methods_keyboard(),
         )
 
     elif text == "🎫 Redeem Code":
@@ -618,6 +726,80 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.answer("Cancelled.")
         await query.message.delete()
         await query.message.reply_text("❌ Cancelled.", reply_markup=MAIN_MENU)
+        return
+
+    # ── Top up balance — admin only for now ──
+    if data in ("payment_binance", "payment_polygon", "payment_trc20", "payment_stars",
+                "payment_gcash", "payment_back", "gcash_paid", "gcash_cancel"):
+        if not is_admin(user_id):
+            await query.answer("🚧 Top up balance is currently unavailable.", show_alert=True)
+            return
+
+    if data == "payment_gcash":
+        await gcash_topup.start_gcash_topup(update, context)
+        return
+
+    if data == "gcash_paid":
+        await gcash_topup.handle_gcash_paid(update, context)
+        return
+
+    if data == "gcash_cancel":
+        await gcash_topup.handle_gcash_cancel(update, context)
+        return
+
+    # ── Payment Methods ──
+    if data == "payment_binance":
+        await query.answer()
+        await query.message.edit_text(
+            BINANCE_PAY_INFO,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Back", callback_data="payment_back")],
+            ]),
+        )
+        return
+
+    if data == "payment_polygon":
+        await query.answer()
+        await query.message.edit_text(
+            POLYGON_INFO,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Back", callback_data="payment_back")],
+            ]),
+        )
+        return
+
+    if data == "payment_trc20":
+        await query.answer()
+        await query.message.edit_text(
+            TRC20_INFO,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Back", callback_data="payment_back")],
+            ]),
+        )
+        return
+
+    if data == "payment_stars":
+        await query.answer()
+        await query.message.edit_text(
+            TELEGRAM_STARS_INFO,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎁 Send as Gift", url="https://t.me/gotactivate")],
+                [InlineKeyboardButton("⬅️ Back", callback_data="payment_back")],
+            ]),
+        )
+        return
+
+    if data == "payment_back":
+        await query.answer()
+        await query.message.edit_text(
+            PAYMENT_METHODS_TEXT,
+            parse_mode="HTML",
+            reply_markup=build_payment_methods_keyboard(),
+        )
         return
 
     # ── Emoji picker (category creation OR emoji edit) ──
