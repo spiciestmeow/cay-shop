@@ -1016,10 +1016,48 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
-    if data in ("profile_orders", "profile_withdraw",
-                "profile_withdraw_req", "profile_withdraw_pro"):
+    if data == "profile_orders":
+        transactions = await db.get_transactions(user_id, limit=20)
+        purchases = [tx for tx in transactions if tx["type"] == "purchase"]
+
+        if not purchases:
+            await query.answer()
+            await query.message.edit_text(
+                "🗒 <b>You have no orders yet.</b>\n\nPurchase from the Services section ⬇️",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("➡️ Back", callback_data="profile_back")],
+                ]),
+            )
+            return
+
+        lines = ["📋 <b>My Orders</b>\n"]
+        for tx in purchases:
+            try:
+                dt = datetime.fromisoformat(tx["created_at"].replace("Z", "+00:00"))
+                date_str = dt.strftime("%m/%d/%Y %H:%M")
+            except Exception:
+                date_str = "—"
+            desc = tx.get("description", "Purchase").replace("Purchase: ", "")
+            lines.append(
+                f"🛒 <b>{desc}</b>\n"
+                f"   💰 ${tx['amount_usd']:.2f} • 📅 {date_str}\n"
+            )
+        lines.append("<i>Showing last 20 orders.</i>")
+
+        await query.answer()
+        await query.message.edit_text(
+            "\n".join(lines),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Profile", callback_data="profile_back")],
+                [InlineKeyboardButton("✕ Close", callback_data="close")],
+            ]),
+        )
+        return
+
+    if data in ("profile_withdraw", "profile_withdraw_req", "profile_withdraw_pro"):
         labels = {
-            "profile_orders": "📋 My Orders",
             "profile_withdraw": "💸 Withdraw",
             "profile_withdraw_req": "📝 Withdraw requests",
             "profile_withdraw_pro": "📄 Withdraw profile",
