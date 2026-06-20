@@ -343,8 +343,9 @@ async def handle_gcash_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE
     await db.set_session(user_id, ud)
 
     await query.answer("Request cancelled.")
-    cancel_text = "❌ <b>GCash deposit request cancelled.</b>"
-    if query.message.caption:
-        await query.message.edit_caption(caption=cancel_text, parse_mode="HTML")
-    else:
-        await query.message.edit_text(cancel_text, parse_mode="HTML")
+    await query.message.delete()
+    await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text="❌ <b>GCash deposit request cancelled.</b>",
+        parse_mode="HTML",
+    )
