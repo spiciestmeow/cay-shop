@@ -1215,6 +1215,46 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
+    if data.startswith("admin_approve_gcash_"):
+        parts = data.split("_")
+        # format: admin_approve_gcash_{user_id}_{amount}
+        target_user_id = int(parts[3])
+        amount = float(parts[4])
+        await db.credit_balance(target_user_id, amount)  # wire to your existing credit function
+        await query.answer("✅ Balance credited!", show_alert=True)
+        try:
+            await query.message.edit_text(
+                query.message.text + "\n\n✅ <b>APPROVED</b> — balance credited.",
+                parse_mode="HTML",
+                reply_markup=None,
+            )
+        except Exception:
+            pass
+        await context.bot.send_message(
+            chat_id=target_user_id,
+            text=f"✅ <b>Deposit confirmed!</b>\n\n₱{amount:.2f} has been credited to your balance.",
+            parse_mode="HTML",
+        )
+        return
+
+    if data.startswith("admin_reject_gcash_"):
+        target_user_id = int(data.split("_")[3])
+        await query.answer("❌ Claim rejected.", show_alert=True)
+        try:
+            await query.message.edit_text(
+                query.message.text + "\n\n❌ <b>REJECTED</b> — no balance credited.",
+                parse_mode="HTML",
+                reply_markup=None,
+            )
+        except Exception:
+            pass
+        await context.bot.send_message(
+            chat_id=target_user_id,
+            text="❌ <b>Deposit not verified.</b>\n\nWe could not verify your GCash payment. Please contact support if you believe this is an error.",
+            parse_mode="HTML",
+        )
+        return
+
     # Unhandled callback
     await query.answer()
 

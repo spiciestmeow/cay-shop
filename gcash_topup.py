@@ -310,7 +310,8 @@ async def handle_gcash_paid(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     username = f"@{tg_user.username}" if tg_user.username else "no username"
     notify_text = (
-        "🇵🇭 <b>New GCash Payment Claim</b>\n\n"
+        "🇵🇭 <b>New GCash Payment Claim</b>\n"
+        "🟡 <b>Status: PENDING VERIFICATION</b>\n\n"
         f"👤 User: {tg_user.full_name} ({username})\n"
         f"🆔 ID: <code>{user_id}</code>\n"
         f"💰 Requested: ₱{pending['requested_amount']:.2f}\n"
@@ -323,6 +324,10 @@ async def handle_gcash_paid(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         text=notify_text,
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Approve", callback_data=f"admin_approve_gcash_{user_id}_{pending['requested_amount']}"),
+                InlineKeyboardButton("❌ Reject", callback_data=f"admin_reject_gcash_{user_id}"),
+            ],
             [InlineKeyboardButton("👤 Open user profile", callback_data=f"admin_view_user_{user_id}")],
         ]),
     )
