@@ -44,10 +44,18 @@ GCASH_NUMBER = "9956274340"
 
 ADMIN_NOTIFY_CHAT_ID = 7399488750
 
+# Keep this in sync with MENU_BUTTONS in main.py. Duplicated here (rather
+# than imported) to avoid a circular import, since main.py imports this
+# module.
+MENU_BUTTONS = {
+    "🛒 Products", "👤 Profile", "🎁 Invite Center",
+    "💰 Top up balance", "🎫 Redeem Code", "📋 Bot Policy", "❓ Help",
+}
+
 MIN_AMOUNT_PHP = 50.0
 MAX_AMOUNT_PHP = 50000.0
 EXPIRY_MINUTES = 15        # real value for production
-EXPIRY_SECONDS_TEST = 10    # TEMP: short expiry for testing — remove when done testing
+EXPIRY_SECONDS_TEST = 5    # TEMP: short expiry for testing — remove when done testing
 USE_TEST_EXPIRY = True     # TEMP: flip to False to use EXPIRY_MINUTES instead
 
 
@@ -88,10 +96,10 @@ async def start_gcash_topup(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await query.answer()
     await query.message.edit_text(
         "<blockquote>🇵🇭 <b>Enter deposit amount</b> ‟</blockquote>\n\n"
-        f"<b>Network:</b> GCash\n"
+        f"<b>Method:</b> GCash\n"
         f"<b>Minimum:</b> {_format_php(MIN_AMOUNT_PHP)}\n"
         f"<b>Maximum:</b> {_format_php(MAX_AMOUNT_PHP)}\n\n"
-        "<i>Send numbers only, e.g. 50</i>",
+        "<i>Send numbers only, e.g. 500</i>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Back", callback_data="payment_back")],
@@ -104,6 +112,17 @@ async def start_gcash_topup(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAULT_TYPE, ud: dict) -> None:
     user_id = update.effective_user.id
     text = update.message.text.strip() if update.message.text else ""
+
+    # If the user tapped a main-menu button instead of typing an amount,
+    # treat it as cancelling this GCash request rather than an invalid
+    # amount — then let the message fall through to the normal menu
+    # handler so their tap still does something.
+    if text in MENU_BUTTONS:
+        ud.pop("awaiting", None)
+        ud.pop("gcash_pending", None)
+        await db.set_session(user_id, ud)
+        await update.message.reply_text("❌ GCash deposit request cancelled.")
+        return "fallthrough"
 
     try:
         amount = float(text)

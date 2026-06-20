@@ -368,6 +368,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         username=tg_user.username,
         full_name=tg_user.full_name,
     )
+
+    # Clear any stale GCash deposit flow if user runs /start mid-flow
+    ud = await db.get_session(tg_user.id)
+    if ud.get("awaiting") == "gcash_amount" or ud.get("gcash_pending"):
+        ud.pop("awaiting", None)
+        ud.pop("gcash_pending", None)
+        await db.set_session(tg_user.id, ud)
     await update.message.reply_text(
         "<blockquote><b>👋 Welcome to CayShop Bot!</b></blockquote>\nI'm here to help you purchase subscriptions and digital services easily and securely.",
         parse_mode="HTML",
@@ -417,8 +424,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # ── GCash amount entry (any user, not just admins) ──
     ud = await db.get_session(user_id)
     if ud.get("awaiting") == "gcash_amount":
-        await gcash_topup.handle_gcash_amount_input(update, context, ud)
-        return
+        result = await gcash_topup.handle_gcash_amount_input(update, context, ud)
+        if result != "fallthrough":
+            return
+        # else: fall through below so the menu button still does its thing
 
     if is_admin(user_id) and text not in MENU_BUTTONS:
         ud = await db.get_session(user_id)
