@@ -913,7 +913,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         text = (
             f"🏅 <b>Statuses</b>\n\n"
-            f"Current status: <b>{current['name']}</b> • discount <b>{current['discount']}%\n\n"
+            f"Current status: <b>{current['name']}</b> • discount <b>{current['discount']}%</b>\n\n"
             f"Progress to the next level:\n"
             f"{progress_text}"
         )
