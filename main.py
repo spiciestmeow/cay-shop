@@ -255,7 +255,7 @@ PROFILE_KEYBOARD = InlineKeyboardMarkup([
     ],
     [
         InlineKeyboardButton("💸 Withdraw", callback_data="profile_withdraw"),
-        InlineKeyboardButton("👛 Wallet statement", callback_data="profile_wallet"),
+        InlineKeyboardButton("🏦 Wallet statement", callback_data="profile_wallet"),
     ],
     [
         InlineKeyboardButton("📝 Withdraw requests", callback_data="profile_withdraw_req"),
@@ -979,10 +979,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         balance = float(db_user.get("balance", 0.0)) if db_user else 0.0
         transactions = await db.get_transactions(user_id, limit=10)
 
-        lines = [f"👛 <b>Wallet Statement</b>\n\n💰 Current balance: <b>${balance:.2f}</b>\n\n"]
+        lines = [f"🏦 <b>Wallet Statement</b>\n\n💰 Current balance: <b>${balance:.2f}</b>\n\n"]
 
         if not transactions:
-            lines.append("No transactions yet.")
+            lines.append("No wallet transactions yet.")
         else:
             for tx in transactions:
                 try:
