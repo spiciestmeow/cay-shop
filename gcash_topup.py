@@ -46,7 +46,9 @@ ADMIN_NOTIFY_CHAT_ID = 7399488750
 
 MIN_AMOUNT_PHP = 50.0
 MAX_AMOUNT_PHP = 50000.0
-EXPIRY_MINUTES = 15
+EXPIRY_MINUTES = 15        # real value for production
+EXPIRY_SECONDS_TEST = 5    # TEMP: short expiry for testing — remove when done testing
+USE_TEST_EXPIRY = True     # TEMP: flip to False to use EXPIRY_MINUTES instead
 
 
 def _generate_unique_amount(base_amount: float) -> float:
@@ -66,6 +68,14 @@ def _format_php(amount: float) -> str:
 
 def _is_url(path: str) -> bool:
     return path.startswith("http://") or path.startswith("https://")
+
+
+def _expiry_seconds() -> int:
+    """TEMP: returns the short test duration if USE_TEST_EXPIRY is on,
+    otherwise the real EXPIRY_MINUTES converted to seconds."""
+    if USE_TEST_EXPIRY:
+        return EXPIRY_SECONDS_TEST
+    return EXPIRY_MINUTES * 60
 
 
 # ─── ENTRY POINT: "🇵🇭 GCash" button pressed ─────────────────────────────
@@ -108,7 +118,8 @@ async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAUL
         return
 
     unique_amount = _generate_unique_amount(amount)
-    expires_at = (datetime.utcnow() + timedelta(minutes=EXPIRY_MINUTES)).isoformat()
+    seconds = _expiry_seconds()
+    expires_at = (datetime.utcnow() + timedelta(seconds=seconds)).isoformat()
 
     ud["awaiting"] = None
     ud["gcash_pending"] = {
@@ -118,10 +129,15 @@ async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAUL
     }
     await db.set_session(user_id, ud)
 
+    expires_label = (
+        f"{seconds} seconds" if USE_TEST_EXPIRY
+        else f"{EXPIRY_MINUTES} minutes"
+    )
+
     caption = (
         "<blockquote>📱 <b>GCash Payment Request</b> ‟</blockquote>\n\n"
         "✅ Scan the QR code or send payment to the number below.\n"
-        f"⏳ <b>Expires in:</b> {EXPIRY_MINUTES} minutes\n\n"
+        f"⏳ <b>Expires in:</b> {expires_label}\n\n"
         f"🪙 <b>currency:</b> PHP (₱)\n"
         f"💰 <b>Amount to send:</b>👇\n"
         f"<pre><code>{unique_amount:.2f}</code></pre>\n"
@@ -145,9 +161,10 @@ async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAUL
         [InlineKeyboardButton("❌ Cancel request", callback_data="gcash_cancel")],
     ])
 
+    sent_message = None
     try:
         photo = GCASH_QR_IMAGE_PATH if _is_url(GCASH_QR_IMAGE_PATH) else open(GCASH_QR_IMAGE_PATH, "rb")
-        await update.message.reply_photo(
+        sent_message = await update.message.reply_photo(
             photo=photo,
             caption=caption,
             parse_mode="HTML",
@@ -155,7 +172,7 @@ async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAUL
         )
     except FileNotFoundError:
         logger.warning(f"GCash QR image not found at {GCASH_QR_IMAGE_PATH}, sending text only.")
-        await update.message.reply_text(
+        sent_message = await update.message.reply_text(
             caption,
             parse_mode="HTML",
             reply_markup=keyboard,
@@ -164,11 +181,71 @@ async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAUL
         # Catches Telegram API errors (bad/unreachable URL, etc.) so the
         # flow degrades to text instead of crashing the handler.
         logger.warning(f"GCash QR image failed to send ({GCASH_QR_IMAGE_PATH}): {e}")
-        await update.message.reply_text(
+        sent_message = await update.message.reply_text(
             caption,
             parse_mode="HTML",
             reply_markup=keyboard,
         )
+
+    # Schedule auto-expiry: after `seconds`, if the request is still
+    # pending (user never tapped Paid/Cancel), delete the message and
+    # clear the session so a stale request can't be marked paid later.
+    if sent_message is not None and context.job_queue is not None:
+        context.job_queue.run_once(
+            _expire_gcash_request,
+            when=seconds,
+            data={
+                "user_id": user_id,
+                "chat_id": sent_message.chat_id,
+                "message_id": sent_message.message_id,
+                "unique_amount": unique_amount,
+            },
+            name=f"gcash_expire_{user_id}_{sent_message.message_id}",
+        )
+    elif context.job_queue is None:
+        logger.warning(
+            "context.job_queue is None — JobQueue is not enabled. "
+            "Install with `pip install python-telegram-bot[job-queue]` "
+            "for auto-expiry to work."
+        )
+
+
+# ─── AUTO-EXPIRY JOB ──────────────────────────────────────────────────────
+
+async def _expire_gcash_request(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Runs once, `seconds` after a GCash request is created. If the user
+    never tapped "I've Paid" or "Cancel", this deletes the message and
+    clears gcash_pending so the request can't be claimed late.
+    """
+    job_data = context.job.data
+    user_id = job_data["user_id"]
+    chat_id = job_data["chat_id"]
+    message_id = job_data["message_id"]
+    unique_amount = job_data["unique_amount"]
+
+    ud = await db.get_session(user_id)
+    pending = ud.get("gcash_pending")
+
+    # Already paid or cancelled — nothing to expire.
+    if not pending or pending.get("unique_amount") != unique_amount:
+        return
+
+    ud.pop("gcash_pending", None)
+    await db.set_session(user_id, ud)
+
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception as e:
+        logger.warning(f"Failed to delete expired GCash message ({chat_id}/{message_id}): {e}")
+
+    try:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="⌛️ Deposit request expired. Please create a new one.",
+        )
+    except Exception as e:
+        logger.warning(f"Failed to send GCash expiry notice to {chat_id}: {e}")
 
 
 # ─── CALLBACKS: "I've Paid" / "Cancel request" ───────────────────────────
