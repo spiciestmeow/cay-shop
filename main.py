@@ -1277,12 +1277,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
 
         # ── Process order number and total purchases ──
-        import random, string
-        order_no = 'LNK' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=11))
         cat = await db.get_category(prod["category_id"])
-
+ 
         db_user_fresh = await db.get_user(user_id)
-
+ 
         if is_admin(user_id):
             admin_total = int(db_user_fresh.get("admin_total_purchases", 0)) if db_user_fresh else 0
             admin_msg = (
