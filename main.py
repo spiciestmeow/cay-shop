@@ -274,11 +274,13 @@ PROFILE_KEYBOARD = InlineKeyboardMarkup([
 
 # ─── ADMIN PANEL BUILDERS ────────────────────────────────────────────────────
 
-def admin_main_keyboard() -> InlineKeyboardMarkup:
+def admin_main_keyboard():
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📂 Manage Categories", callback_data="admin_categories")],
-        [InlineKeyboardButton("📦 Manage Products", callback_data="admin_products")],
-        [InlineKeyboardButton("🎫 Generate Redeem Code", callback_data="admin_gen_redeem")],  # ← new
+        [InlineKeyboardButton("📂 Manage Categories",    callback_data="admin_categories")],
+        [InlineKeyboardButton("📦 Manage Products",      callback_data="admin_products")],
+        [InlineKeyboardButton("🎫 Generate Redeem Code", callback_data="admin_gen_redeem")],
+        [InlineKeyboardButton("⚙️ Bot Settings",         callback_data="admin_settings")],  # ← NEW
         [InlineKeyboardButton("✕ Close", callback_data="close")],
     ])
 
@@ -787,6 +789,29 @@ async def _process_admin_input(update: Update, user_id: int, ud: dict) -> None:
                 [InlineKeyboardButton("⬅️ Back to list", callback_data=f"admin_prodcat_{prod['category_id']}")],
             ]),
         )
+
+    elif awaiting == "gcash_rate":
+        try:
+            rate = float(text.strip())
+            if rate <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Invalid rate. Enter a positive number like <code>57.50</code>:",
+                parse_mode="HTML",
+            )
+            return
+        ud.pop("awaiting", None)
+        await db.set_session(user_id, ud)
+        await db.set_setting("php_usd_rate", str(rate))
+        await update.message.reply_text(
+            f"✅ <b>GCash rate updated!</b>\n\n"
+            f"💱 New rate: <b>₱{rate:.2f} = $1.00</b>\n\n"
+            f"All new GCash deposits will use this rate.",
+            parse_mode="HTML",
+            reply_markup=MAIN_MENU,
+        )
+ 
 
     elif awaiting == "stock":
         try:
@@ -1446,6 +1471,35 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.answer()
         await query.message.reply_text(
             "🎫 Enter the <b>amount in USD</b> for this redeem code (e.g. <code>5.00</code>):",
+            parse_mode="HTML",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    if data == "admin_settings":
+        rate = await db.get_php_usd_rate()
+        await query.answer()
+        await query.message.edit_text(
+            f"⚙️ <b>Bot Settings</b>\n\n"
+            f"💱 <b>GCash Exchange Rate</b>\n"
+            f"Current rate: <b>₱{rate:.2f} = $1.00</b>\n\n"
+            f"<i>Update this whenever the PHP/USD rate changes.</i>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💱 Set GCash Rate", callback_data="admin_set_gcash_rate")],
+                [InlineKeyboardButton("⬅️ Back", callback_data="admin_main")],
+            ]),
+        )
+        return
+
+    if data == "admin_set_gcash_rate":
+        rate = await db.get_php_usd_rate()
+        await db.set_session(user_id, {"awaiting": "gcash_rate"})
+        await query.answer()
+        await query.message.reply_text(
+            f"💱 Enter the new <b>PHP → USD exchange rate</b>.\n\n"
+            f"Current rate: <b>₱{rate:.2f} = $1.00</b>\n\n"
+            f"Example: if $1 = ₱57.50, send <code>57.50</code>",
             parse_mode="HTML",
             reply_markup=ReplyKeyboardRemove(),
         )

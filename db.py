@@ -11,18 +11,48 @@ load_dotenv()
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 
-CATEGORIES_TABLE = "cay_shop_categories"
-PRODUCTS_TABLE = "cay_shop_products"
-USERS_TABLE = "cay_shop_users"
-STATES_TABLE = "cay_shop_states"
-TRANSACTIONS_TABLE = "cay_shop_transactions"
-REDEEM_CODES_TABLE = "cay_shop_redeem_codes"
+CATEGORIES_TABLE    = "cay_shop_categories"
+PRODUCTS_TABLE      = "cay_shop_products"
+USERS_TABLE         = "cay_shop_users"
+STATES_TABLE        = "cay_shop_states"
+TRANSACTIONS_TABLE  = "cay_shop_transactions"
+REDEEM_CODES_TABLE  = "cay_shop_redeem_codes"
+SETTINGS_TABLE      = "cay_shop_settings"   # ← NEW: key/value store
 
 def _client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def generate_order_number() -> str:
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=14))
+
+# ─── SETTINGS (key/value store) ──────────────────────────────────────────────
+#
+# Supabase table:
+#   cay_shop_settings ( key TEXT PRIMARY KEY, value TEXT NOT NULL )
+#
+# Pre-seed one row so the rate is available before the admin sets it:
+#   INSERT INTO cay_shop_settings (key, value) VALUES ('php_usd_rate', '56.0');
+
+DEFAULT_PHP_TO_USD_RATE = 56.0   # fallback if no row exists yet
+
+async def get_setting(key: str) -> str | None:
+    """Return the raw string value for a settings key, or None."""
+    c = _client()
+    res = c.table(SETTINGS_TABLE).select("value").eq("key", key).limit(1).execute()
+    return res.data[0]["value"] if res.data else None
+
+async def set_setting(key: str, value: str) -> None:
+    """Upsert a settings key/value pair."""
+    c = _client()
+    c.table(SETTINGS_TABLE).upsert({"key": key, "value": value}).execute()
+
+async def get_php_usd_rate() -> float:
+    """Return the current PHP→USD exchange rate from the DB."""
+    raw = await get_setting("php_usd_rate")
+    try:
+        return float(raw) if raw is not None else DEFAULT_PHP_TO_USD_RATE
+    except (ValueError, TypeError):
+        return DEFAULT_PHP_TO_USD_RATE
 
 # ─── CATEGORIES ──────────────────────────────────────────────────────────────
 
@@ -85,20 +115,20 @@ async def add_product(
     duration: str = "",
     warranty: str = "No warranty",
     delivery: str = "LINK",
-    demo_url: str = "",  
+    demo_url: str = "",
     delivery_url: str = "",
 ) -> int:
     c = _client()
     res = c.table(PRODUCTS_TABLE).insert({
-        "category_id": cat_id,
-        "name": name,
-        "description": description,
-        "price": price,
-        "stock": stock,
-        "duration": duration,
-        "warranty": warranty,
-        "delivery": delivery,
-        "demo_url": demo_url, 
+        "category_id":  cat_id,
+        "name":         name,
+        "description":  description,
+        "price":        price,
+        "stock":        stock,
+        "duration":     duration,
+        "warranty":     warranty,
+        "delivery":     delivery,
+        "demo_url":     demo_url,
         "delivery_url": delivery_url,
     }).execute()
     return res.data[0]["id"]
@@ -151,8 +181,8 @@ async def get_or_create_user(user_id: int, username: str | None, full_name: str 
     from datetime import datetime
     now = datetime.utcnow().isoformat()
     ins = c.table(USERS_TABLE).insert({
-        "user_id": user_id,
-        "username": username,
+        "user_id":   user_id,
+        "username":  username,
         "full_name": full_name,
         "joined_at": now,
     }).execute()
@@ -164,8 +194,8 @@ async def get_user(user_id: int) -> dict | None:
     return res.data[0] if res.data else None
 
 async def credit_balance(user_id: int, amount_php: float) -> None:
-    PHP_TO_USD_RATE = 56.0
-    amount_usd = round(amount_php / PHP_TO_USD_RATE, 2)
+    rate = await get_php_usd_rate()          # ← dynamic rate from DB
+    amount_usd = round(amount_php / rate, 2)
 
     c = _client()
     res = c.table(USERS_TABLE).select("balance").eq("user_id", user_id).limit(1).execute()
@@ -175,7 +205,6 @@ async def credit_balance(user_id: int, amount_php: float) -> None:
     new_balance = round(current_balance + amount_usd, 2)
     c.table(USERS_TABLE).update({"balance": new_balance}).eq("user_id", user_id).execute()
 
-    # ← Record the deposit transaction
     await add_transaction(
         user_id=user_id,
         type="deposit",
@@ -217,7 +246,6 @@ STATUS_TIERS = [
 ]
 
 def get_status_tier(total_spent: float) -> dict:
-    """Return the current tier dict for a given total_spent."""
     current = STATUS_TIERS[0]
     for tier in STATUS_TIERS:
         if total_spent >= tier["min"]:
@@ -225,7 +253,6 @@ def get_status_tier(total_spent: float) -> dict:
     return current
 
 def get_next_tier(total_spent: float) -> dict | None:
-    """Return the next tier, or None if already at max."""
     for tier in STATUS_TIERS:
         if tier["min"] > total_spent:
             return tier
@@ -240,25 +267,23 @@ async def record_purchase(user_id: int, amount_usd: float, product_name: str = "
     new_balance = round(float(row.get("balance") or 0) - amount_usd, 2)
 
     if is_admin_purchase:
-        # Admin test — only increment admin_total_purchases, don't touch total_spent or total_purchases
         new_admin_total = int(row.get("admin_total_purchases") or 0) + 1
         c.table(USERS_TABLE).update({
             "balance": new_balance,
             "admin_total_purchases": new_admin_total,
         }).eq("user_id", user_id).execute()
     else:
-        # Real user purchase — increment normal counters
-        new_spent = round(float(row.get("total_spent") or 0) + amount_usd, 2)
+        new_spent     = round(float(row.get("total_spent") or 0) + amount_usd, 2)
         new_purchases = int(row.get("total_purchases") or 0) + 1
         c.table(USERS_TABLE).update({
-            "balance": new_balance,
-            "total_spent": new_spent,
+            "balance":         new_balance,
+            "total_spent":     new_spent,
             "total_purchases": new_purchases,
         }).eq("user_id", user_id).execute()
 
     await add_transaction(
         user_id=user_id,
-        type="purchase",
+        type="deposit" if is_admin_purchase else "purchase",
         amount_usd=amount_usd,
         description=f"{'[ADMIN TEST] ' if is_admin_purchase else ''}Purchase: {product_name}",
     )
@@ -273,9 +298,9 @@ async def add_transaction(
 ) -> None:
     c = _client()
     row = {
-        "user_id": user_id,
-        "type": type,
-        "amount_usd": amount_usd,
+        "user_id":     user_id,
+        "type":        type,
+        "amount_usd":  amount_usd,
         "description": description,
     }
     if amount_php is not None:
@@ -297,34 +322,31 @@ async def get_transactions(user_id: int, limit: int = 10) -> list[dict]:
     return res.data or []
 
 # ─── REDEEM CODES ────────────────────────────────────────────────────────────
+
 def generate_redeem_code() -> str:
-    """Generate a random redeem code like CAY-X7K2-9PLM."""
     chars = string.ascii_uppercase + string.digits
     part1 = ''.join(random.choices(chars, k=4))
     part2 = ''.join(random.choices(chars, k=4))
     return f"CAY-{part1}-{part2}"
 
 async def create_redeem_code(amount_usd: float, created_by: int) -> str:
-    """Create a new single-use redeem code and store it. Returns the code string."""
     c = _client()
     code = generate_redeem_code()
     while await get_redeem_code(code):
         code = generate_redeem_code()
     c.table(REDEEM_CODES_TABLE).insert({
-        "code": code,
+        "code":       code,
         "amount_usd": amount_usd,
         "created_by": created_by,
     }).execute()
     return code
 
 async def get_redeem_code(code: str) -> dict | None:
-    """Fetch a redeem code row, or None if it doesn't exist."""
     c = _client()
     res = c.table(REDEEM_CODES_TABLE).select("*").eq("code", code).limit(1).execute()
     return res.data[0] if res.data else None
 
 async def mark_redeem_code_used(code: str, user_id: int) -> None:
-    """Mark a redeem code as used by a specific user."""
     from datetime import datetime
     c = _client()
     c.table(REDEEM_CODES_TABLE).update({
@@ -334,10 +356,6 @@ async def mark_redeem_code_used(code: str, user_id: int) -> None:
     }).eq("code", code).execute()
 
 async def credit_balance_usd(user_id: int, amount_usd: float, description: str = "Redeem code") -> None:
-    """
-    Credit balance directly in USD — for redeem codes. Do NOT use credit_balance()
-    here; that one divides by the PHP→USD rate and is GCash-specific.
-    """
     c = _client()
     res = c.table(USERS_TABLE).select("balance").eq("user_id", user_id).limit(1).execute()
     if not res.data:
