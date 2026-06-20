@@ -6,17 +6,16 @@ Mirrors the existing TRC20 deposit pattern:
   2. Bot asks for the deposit amount (PHP)
   3. Bot generates a unique centavo suffix (e.g. 1000 -> 1000.37) so admin
      can match the incoming GCash transaction to this specific request
-  4. Bot shows a static GCash QR image (placeholder path below) + the exact
-     amount to send + a 15-minute expiry, same as the TRC20 screen
+  4. Bot shows a static GCash QR image + the exact amount to send + a
+     15-minute expiry, same as the TRC20 screen
   5. User taps "✅ I've Paid" -> bot DMs ADMIN_NOTIFY_CHAT_ID with the
      user's id, username, requested amount, and unique amount to verify
   6. Admin manually checks the GCash app transaction history and credits
      balance with /credit or whatever your existing admin balance command is
      (not included here — wire to whatever you already use for manual
-     balance credits, since that wasn't in the code you shared)
+     balance credits)
 
-Drop this file next to main.py and db.py, then wire it in per the
-instructions at the bottom of this file.
+Drop this file next to main.py and db.py.
 """
 
 import random
@@ -36,9 +35,8 @@ logger = logging.getLogger(__name__)
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────
 
-# Swap this with your real GCash QR screenshot once ready.
-# Must be a local file path (preferred — instant, no network dependency)
-# or a direct HTTPS image URL.
+# Can be a local file path OR a direct HTTPS image URL (e.g. imgbb "Direct
+# links" output). URLs are detected automatically below.
 GCASH_QR_IMAGE_PATH = "https://i.ibb.co/CKd4m9GB/photo-2026-06-20-11-02-58.jpg"
 
 GCASH_ACCOUNT_NAME = "CL**DE B."
@@ -49,6 +47,7 @@ ADMIN_NOTIFY_CHAT_ID = 7399488750
 MIN_AMOUNT_PHP = 50.0
 MAX_AMOUNT_PHP = 50000.0
 EXPIRY_MINUTES = 15
+
 
 def _generate_unique_amount(base_amount: float) -> float:
     """
@@ -65,13 +64,13 @@ def _format_php(amount: float) -> str:
     return f"₱{amount:,.2f}"
 
 
+def _is_url(path: str) -> bool:
+    return path.startswith("http://") or path.startswith("https://")
+
+
 # ─── ENTRY POINT: "🇵🇭 GCash" button pressed ─────────────────────────────
 
 async def start_gcash_topup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Call this from the payment_gcash callback instead of just showing
-    GCASH_INFO directly, if you want the amount-entry + QR flow.
-    """
     query = update.callback_query
     user_id = update.effective_user.id
 
@@ -91,9 +90,6 @@ async def start_gcash_topup(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 # ─── TEXT INPUT HANDLER: amount typed in ─────────────────────────────────
-# Call this from your _process_admin_input-style router, or add a parallel
-# check in handle_message for awaiting == "gcash_amount" (this isn't an
-# admin-only flow, so it shouldn't live inside the is_admin gate).
 
 async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAULT_TYPE, ud: dict) -> None:
     user_id = update.effective_user.id
@@ -146,15 +142,24 @@ async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAUL
     ])
 
     try:
+        photo = GCASH_QR_IMAGE_PATH if _is_url(GCASH_QR_IMAGE_PATH) else open(GCASH_QR_IMAGE_PATH, "rb")
         await update.message.reply_photo(
-            photo=open(GCASH_QR_IMAGE_PATH, "rb"),
+            photo=photo,
             caption=caption,
             parse_mode="HTML",
             reply_markup=keyboard,
         )
     except FileNotFoundError:
-        # Falls back to text-only until the real QR image is in place.
         logger.warning(f"GCash QR image not found at {GCASH_QR_IMAGE_PATH}, sending text only.")
+        await update.message.reply_text(
+            caption,
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
+    except Exception as e:
+        # Catches Telegram API errors (bad/unreachable URL, etc.) so the
+        # flow degrades to text instead of crashing the handler.
+        logger.warning(f"GCash QR image failed to send ({GCASH_QR_IMAGE_PATH}): {e}")
         await update.message.reply_text(
             caption,
             parse_mode="HTML",
@@ -163,7 +168,6 @@ async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAUL
 
 
 # ─── CALLBACKS: "I've Paid" / "Cancel request" ───────────────────────────
-# Add these branches inside your existing handle_callback function.
 
 async def handle_gcash_paid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -182,12 +186,15 @@ async def handle_gcash_paid(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         ud.pop("gcash_pending", None)
         await db.set_session(user_id, ud)
         await query.answer("⚠️ This request has expired. Please start a new deposit.", show_alert=True)
-        await query.message.edit_caption(
-            caption="⌛ <b>Request expired.</b>\n\nPlease start a new GCash deposit.",
-            parse_mode="HTML",
-        ) if query.message.caption else await query.message.edit_text(
-            "⌛ <b>Request expired.</b>\n\nPlease start a new GCash deposit."
-        )
+        if query.message.caption:
+            await query.message.edit_caption(
+                caption="⌛ <b>Request expired.</b>\n\nPlease start a new GCash deposit.",
+                parse_mode="HTML",
+            )
+        else:
+            await query.message.edit_text(
+                "⌛ <b>Request expired.</b>\n\nPlease start a new GCash deposit."
+            )
         return
 
     await query.answer("✅ Thanks! We're verifying your payment.", show_alert=True)
