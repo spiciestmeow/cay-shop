@@ -39,12 +39,12 @@ logger = logging.getLogger(__name__)
 # Swap this with your real GCash QR screenshot once ready.
 # Must be a local file path (preferred — instant, no network dependency)
 # or a direct HTTPS image URL.
-GCASH_QR_IMAGE_PATH = "assets/gcash_qr_placeholder.png"
+GCASH_QR_IMAGE_PATH = "https://i.ibb.co/CKd4m9GB/photo-2026-06-20-11-02-58.jpg"
 
-GCASH_ACCOUNT_NAME = "Cay Digitals"      # TODO: set your real GCash account name
-GCASH_NUMBER = "9956274340"           # TODO: set your real GCash number
+GCASH_ACCOUNT_NAME = "CL**DE B."
+GCASH_NUMBER = "9956274340"
 
-ADMIN_NOTIFY_CHAT_ID = 7399488750        # private chat to receive "I've Paid" alerts
+ADMIN_NOTIFY_CHAT_ID = 7399488750
 
 MIN_AMOUNT_PHP = 50.0
 MAX_AMOUNT_PHP = 50000.0
