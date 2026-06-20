@@ -302,6 +302,10 @@ async def handle_gcash_paid(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             )
         return
 
+    # ✅ ADD THIS — clear gcash_pending so the expiry job sees it's been handled
+    ud.pop("gcash_pending", None)
+    await db.set_session(user_id, ud)
+
     await query.answer("✅ Thanks! We're verifying your payment.", show_alert=True)
 
     username = f"@{tg_user.username}" if tg_user.username else "no username"
