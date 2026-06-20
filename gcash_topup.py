@@ -154,7 +154,7 @@ async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAUL
     )
 
     caption = (
-        "<blockquote>📱 <b>GCash Payment Request</b></blockquote>\n\n"
+        "<blockquote>📱 <b>Php Payment Request(GCash)</b></blockquote>\n\n"
         "✅ Scan the QR code or send payment to the number below.\n"
         f"⏳ <b>Expires in:</b> {expires_label}\n\n"
         f"🪙 <b>currency:</b> PHP (₱)\n"
