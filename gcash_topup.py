@@ -128,12 +128,11 @@ async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAUL
         amount = float(text)
     except ValueError:
         await update.message.reply_text("⚠️ Invalid amount.\nSend numbers only (e.g. 50 or 50.5) within min/max limits.")
-        # await update.message.reply_text("❌ Invalid amount. Please send numbers only, e.g. 500")
         return
 
     if amount < MIN_AMOUNT_PHP or amount > MAX_AMOUNT_PHP:
         await update.message.reply_text(
-            f"❌ Amount must be between {_format_php(MIN_AMOUNT_PHP)} and {_format_php(MAX_AMOUNT_PHP)}."
+            f"⚠️ Amount must be between {_format_php(MIN_AMOUNT_PHP)} and {_format_php(MAX_AMOUNT_PHP)}."
         )
         return
 

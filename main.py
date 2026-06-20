@@ -1057,7 +1057,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("⬅️ Profile", callback_data="profile_back")],
-                [InlineKeyboardButton("✕ Close", callback_data="close")],
             ]),
         )
         return
