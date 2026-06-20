@@ -240,7 +240,7 @@ def build_profile_text(tg_user, db_user: dict) -> str:
         f"👤 <b>Name:</b> {full_name}\n"
         f"💰 <b>Balance:</b> ${balance:.2f}\n"
         f"⭐ <b>Level:</b> {db.get_status_tier(total_spent)['name']}\n"
-        f"🏷️ <b>Product discount:</b> 0%\n"
+        f"🏷️ <b>Product discount:</b> {db.get_status_tier(total_spent)['discount']}%\n"
         f"🛒 <b>Total purchases:</b> {total_purchases}\n"
         f"💸 <b>Spent (net):</b> ${total_spent:.2f}\n"
         f"🤝 <b>Reseller discount:</b> ❌\n"
@@ -974,12 +974,53 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
+    if data == "profile_wallet":
+        db_user = await db.get_user(user_id)
+        balance = float(db_user.get("balance", 0.0)) if db_user else 0.0
+        transactions = await db.get_transactions(user_id, limit=10)
+
+        lines = [f"👛 <b>Wallet Statement</b>\n\n💰 Current balance: <b>${balance:.2f}</b>\n\n"]
+
+        if not transactions:
+            lines.append("No transactions yet.")
+        else:
+            for tx in transactions:
+                try:
+                    dt = datetime.fromisoformat(tx["created_at"].replace("Z", "+00:00"))
+                    date_str = dt.strftime("%m/%d %H:%M")
+                except Exception:
+                    date_str = "—"
+
+                if tx["type"] == "deposit":
+                    php_part = f" (₱{tx['amount_php']:.2f})" if tx.get("amount_php") else ""
+                    lines.append(
+                        f"✅ <b>+${tx['amount_usd']:.2f}</b>{php_part}\n"
+                        f"   🏦 {tx.get('description', 'Deposit')} • {date_str}\n"
+                    )
+                elif tx["type"] == "purchase":
+                    lines.append(
+                        f"🛒 <b>-${tx['amount_usd']:.2f}</b>\n"
+                        f"   📦 {tx.get('description', 'Purchase')} • {date_str}\n"
+                    )
+
+        lines.append("\n<i>Showing last 10 transactions.</i>")
+
+        await query.answer()
+        await query.message.edit_text(
+            "\n".join(lines),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Profile", callback_data="profile_back")],
+                [InlineKeyboardButton("✕ Close", callback_data="close")],
+            ]),
+        )
+        return
+
     if data in ("profile_orders", "profile_withdraw",
-                "profile_wallet", "profile_withdraw_req", "profile_withdraw_pro"):
+                "profile_withdraw_req", "profile_withdraw_pro"):
         labels = {
             "profile_orders": "📋 My Orders",
             "profile_withdraw": "💸 Withdraw",
-            "profile_wallet": "👛 Wallet statement",
             "profile_withdraw_req": "📝 Withdraw requests",
             "profile_withdraw_pro": "📄 Withdraw profile",
         }
@@ -1115,12 +1156,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         # ── Confirm screen before charging ──
         await query.answer()
+        db_user_tier = db.get_status_tier(float(db_user.get("total_spent", 0)))
+        discount_pct = db_user_tier["discount"]
+        discounted_price = round(price * (1 - discount_pct / 100), 2)
+
         await query.message.edit_text(
             f"🛒 <b>Confirm Purchase</b>\n\n"
             f"📦 Product: <b>{prod['name']}</b>\n"
-            f"💰 Price: <b>${price:.2f}</b>\n"
-            f"👛 Your balance: <b>${balance:.2f}</b>\n"
-            f"💳 Balance after: <b>${round(balance - price, 2):.2f}</b>\n\n"
+            f"💰 Original price: <b>${price:.2f}</b>\n"
+            + (f"🏷️ Your discount: <b>{discount_pct}%</b> → <b>${discounted_price:.2f}</b>\n" if discount_pct > 0 else "")
+            + f"👛 Your balance: <b>${balance:.2f}</b>\n"
+            f"💳 Balance after: <b>${round(balance - discounted_price, 2):.2f}</b>\n\n"
             f"Tap <b>Confirm</b> to complete your purchase.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
@@ -1151,15 +1197,26 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.answer("⚠️ No delivery URL. Contact support.", show_alert=True)
             return
 
+        # Apply tier discount
+        tier = db.get_status_tier(float(db_user.get("total_spent", 0)))
+        discount_pct = tier["discount"]
+        final_price = round(price * (1 - discount_pct / 100), 2)
+
+        if balance < final_price:
+            await query.answer("❌ Insufficient balance.", show_alert=True)
+            return
+
         # ── Process the purchase ──
-        await db.record_purchase(user_id, price)
+        await db.record_purchase(user_id, final_price, product_name=prod['name'])
         await db.update_product_stock(prod_id, prod["stock"] - 1)
 
         await query.answer("✅ Purchase successful!", show_alert=True)
         await query.message.edit_text(
             f"✅ <b>Purchase Successful!</b>\n\n"
             f"📦 <b>{prod['name']}</b>\n"
-            f"💰 <b>${price:.2f}</b> deducted from your balance\n\n"
+            f"💰 <b>${final_price:.2f}</b> deducted from your balance"
+            + (f" <i>(discount applied: {discount_pct}%)</i>" if discount_pct > 0 else "")
+            + "\n\n"
             f"🔗 <b>Your delivery link:</b>\n"
             f"{delivery_url}\n\n"
             f"⏳ Duration: {prod.get('duration') or '—'}\n"

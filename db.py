@@ -13,7 +13,7 @@ CATEGORIES_TABLE = "cay_shop_categories"
 PRODUCTS_TABLE = "cay_shop_products"
 USERS_TABLE = "cay_shop_users"
 STATES_TABLE = "cay_shop_states"
-
+TRANSACTIONS_TABLE = "cay_shop_transactions"
 
 def _client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -159,9 +159,9 @@ async def get_user(user_id: int) -> dict | None:
     return res.data[0] if res.data else None
 
 async def credit_balance(user_id: int, amount_php: float) -> None:
-    PHP_TO_USD_RATE = 56.0  # update this to current rate
+    PHP_TO_USD_RATE = 56.0
     amount_usd = round(amount_php / PHP_TO_USD_RATE, 2)
-    
+
     c = _client()
     res = c.table(USERS_TABLE).select("balance").eq("user_id", user_id).limit(1).execute()
     if not res.data:
@@ -169,6 +169,15 @@ async def credit_balance(user_id: int, amount_php: float) -> None:
     current_balance = float(res.data[0].get("balance") or 0)
     new_balance = round(current_balance + amount_usd, 2)
     c.table(USERS_TABLE).update({"balance": new_balance}).eq("user_id", user_id).execute()
+
+    # ← Record the deposit transaction
+    await add_transaction(
+        user_id=user_id,
+        type="deposit",
+        amount_usd=amount_usd,
+        amount_php=amount_php,
+        description=f"GCash deposit ₱{amount_php:.2f}",
+    )
 
 # ─── SESSION STATE ────────────────────────────────────────────────────────────
 
@@ -217,8 +226,7 @@ def get_next_tier(total_spent: float) -> dict | None:
             return tier
     return None
 
-async def record_purchase(user_id: int, amount_usd: float) -> None:
-    """Deduct balance and increment total_spent + total_purchases."""
+async def record_purchase(user_id: int, amount_usd: float, product_name: str = "") -> None:
     c = _client()
     res = c.table(USERS_TABLE).select("balance, total_spent, total_purchases").eq("user_id", user_id).limit(1).execute()
     if not res.data:
@@ -232,3 +240,42 @@ async def record_purchase(user_id: int, amount_usd: float) -> None:
         "total_spent": new_spent,
         "total_purchases": new_purchases,
     }).eq("user_id", user_id).execute()
+
+    # ← Record the purchase transaction
+    await add_transaction(
+        user_id=user_id,
+        type="purchase",
+        amount_usd=amount_usd,
+        description=f"Purchase: {product_name}",
+    )
+
+async def add_transaction(
+    user_id: int,
+    type: str,
+    amount_usd: float,
+    amount_php: float = None,
+    description: str = "",
+) -> None:
+    c = _client()
+    row = {
+        "user_id": user_id,
+        "type": type,
+        "amount_usd": amount_usd,
+        "description": description,
+    }
+    if amount_php is not None:
+        row["amount_php"] = amount_php
+    c.table(TRANSACTIONS_TABLE).insert(row).execute()
+
+
+async def get_transactions(user_id: int, limit: int = 10) -> list[dict]:
+    c = _client()
+    res = (
+        c.table(TRANSACTIONS_TABLE)
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return res.data or []
