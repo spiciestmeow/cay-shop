@@ -16,6 +16,7 @@ PRODUCTS_TABLE = "cay_shop_products"
 USERS_TABLE = "cay_shop_users"
 STATES_TABLE = "cay_shop_states"
 TRANSACTIONS_TABLE = "cay_shop_transactions"
+REDEEM_CODES_TABLE = "cay_shop_redeem_codes"
 
 def _client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -294,3 +295,59 @@ async def get_transactions(user_id: int, limit: int = 10) -> list[dict]:
         .execute()
     )
     return res.data or []
+
+# ─── REDEEM CODES ────────────────────────────────────────────────────────────
+def generate_redeem_code() -> str:
+    """Generate a random redeem code like CAY-X7K2-9PLM."""
+    chars = string.ascii_uppercase + string.digits
+    part1 = ''.join(random.choices(chars, k=4))
+    part2 = ''.join(random.choices(chars, k=4))
+    return f"CAY-{part1}-{part2}"
+
+async def create_redeem_code(amount_usd: float, created_by: int) -> str:
+    """Create a new single-use redeem code and store it. Returns the code string."""
+    c = _client()
+    code = generate_redeem_code()
+    while await get_redeem_code(code):
+        code = generate_redeem_code()
+    c.table(REDEEM_CODES_TABLE).insert({
+        "code": code,
+        "amount_usd": amount_usd,
+        "created_by": created_by,
+    }).execute()
+    return code
+
+async def get_redeem_code(code: str) -> dict | None:
+    """Fetch a redeem code row, or None if it doesn't exist."""
+    c = _client()
+    res = c.table(REDEEM_CODES_TABLE).select("*").eq("code", code).limit(1).execute()
+    return res.data[0] if res.data else None
+
+async def mark_redeem_code_used(code: str, user_id: int) -> None:
+    """Mark a redeem code as used by a specific user."""
+    from datetime import datetime
+    c = _client()
+    c.table(REDEEM_CODES_TABLE).update({
+        "is_used": True,
+        "used_by": user_id,
+        "used_at": datetime.utcnow().isoformat(),
+    }).eq("code", code).execute()
+
+async def credit_balance_usd(user_id: int, amount_usd: float, description: str = "Redeem code") -> None:
+    """
+    Credit balance directly in USD — for redeem codes. Do NOT use credit_balance()
+    here; that one divides by the PHP→USD rate and is GCash-specific.
+    """
+    c = _client()
+    res = c.table(USERS_TABLE).select("balance").eq("user_id", user_id).limit(1).execute()
+    if not res.data:
+        return
+    current_balance = float(res.data[0].get("balance") or 0)
+    new_balance = round(current_balance + amount_usd, 2)
+    c.table(USERS_TABLE).update({"balance": new_balance}).eq("user_id", user_id).execute()
+    await add_transaction(
+        user_id=user_id,
+        type="deposit",
+        amount_usd=amount_usd,
+        description=description,
+    )

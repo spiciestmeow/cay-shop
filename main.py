@@ -278,6 +278,7 @@ def admin_main_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📂 Manage Categories", callback_data="admin_categories")],
         [InlineKeyboardButton("📦 Manage Products", callback_data="admin_products")],
+        [InlineKeyboardButton("🎫 Generate Redeem Code", callback_data="admin_gen_redeem")],  # ← new
         [InlineKeyboardButton("✕ Close", callback_data="close")],
     ])
 
@@ -443,6 +444,59 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
         # else: fall through below so the menu button still does its thing
 
+    # ── Redeem code entry (any user) ──
+    if ud.get("awaiting") == "redeem_code":
+        await db.clear_session(user_id)  # consume the awaiting state either way
+        code = text.strip().upper()
+        redeem = await db.get_redeem_code(code)
+
+        if not redeem:
+            await update.message.reply_text(
+                "❌ <b>Invalid redeem code.</b>\n\nPlease check the code and try again, "
+                "or contact support if you believe this is an error.",
+                parse_mode="HTML",
+                reply_markup=MAIN_MENU,
+            )
+            return
+
+        if redeem["is_used"]:
+            await update.message.reply_text(
+                "❌ <b>This redeem code has already been used.</b>",
+                parse_mode="HTML",
+                reply_markup=MAIN_MENU,
+            )
+            return
+
+        amount = float(redeem["amount_usd"])
+        await db.mark_redeem_code_used(code, user_id)
+        await db.credit_balance_usd(user_id, amount, description=f"Redeem code: {code}")
+
+        await update.message.reply_text(
+            f"✅ <b>Redeem successful!</b>\n\n"
+            f"💰 <b>${amount:.2f}</b> has been added to your balance.",
+            parse_mode="HTML",
+            reply_markup=MAIN_MENU,
+        )
+
+        # ── Channel notification (same style as GCash, masked amount) ──
+        if CHANNEL_ID:
+            try:
+                await context.bot.send_message(
+                    chat_id=CHANNEL_ID,
+                    text=(
+                        f"🤑 <b>New Credits Added!</b>\n\n"
+                        f"<blockquote>"
+                        f"👤 <b>User:</b> <code>{mask_user_id(user_id)}</code>\n"
+                        f"💵 <b>Amount:</b> 🤑\n"
+                        f"💳 <b>Method:</b> Redeem Code"
+                        f"</blockquote>"
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+        return
+
     if is_admin(user_id) and text not in MENU_BUTTONS:
         ud = await db.get_session(user_id)
         if ud.get("awaiting"):
@@ -476,8 +530,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
 
     elif text == "🎫 Redeem Code":
+        await db.set_session(user_id, {"awaiting": "redeem_code"})
         await update.message.reply_text(
-            "Please send your redeem code:",
+            "🎫 Please send your redeem code:",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("💬 Request Redeem Code", url="https://t.me/caydigitals")],
                 [InlineKeyboardButton("✕ Close", callback_data="close")],
@@ -558,6 +613,28 @@ async def _process_admin_input(update: Update, user_id: int, ud: dict) -> None:
             "Enter a <b>description</b> for this product:",
             parse_mode="HTML",
             reply_markup=ReplyKeyboardRemove(),
+        )
+
+    elif awaiting == "redeem_amount":
+        try:
+            amount = float(text)
+            if amount <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Invalid amount. Please enter a positive number like 5.00:"
+            )
+            return
+        ud.pop("awaiting", None)
+        await db.set_session(user_id, ud)
+        code = await db.create_redeem_code(amount, created_by=user_id)
+        await update.message.reply_text(
+            f"✅ <b>Redeem code created!</b>\n\n"
+            f"🎫 Code: <code>{code}</code>\n"
+            f"💰 Amount: <b>${amount:.2f}</b>\n\n"
+            f"<i>Send this code to the customer. It can only be used once.</i>",
+            parse_mode="HTML",
+            reply_markup=MAIN_MENU,
         )
 
     elif awaiting == "prod_desc":
@@ -1348,6 +1425,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "🔧 <b>Admin Panel</b>\n\nManage your bot's categories and products below:",
             parse_mode="HTML",
             reply_markup=admin_main_keyboard(),
+        )
+        return
+
+    if data == "admin_gen_redeem":
+        await db.set_session(user_id, {"awaiting": "redeem_amount"})
+        await query.answer()
+        await query.message.reply_text(
+            "🎫 Enter the <b>amount in USD</b> for this redeem code (e.g. <code>5.00</code>):",
+            parse_mode="HTML",
+            reply_markup=ReplyKeyboardRemove(),
         )
         return
 
