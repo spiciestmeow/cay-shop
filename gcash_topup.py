@@ -42,7 +42,7 @@ GCASH_QR_IMAGE_PATH = "https://i.ibb.co/CKd4m9GB/photo-2026-06-20-11-02-58.jpg"
 GCASH_ACCOUNT_NAME = "CL**DE B."
 GCASH_NUMBER = "9956274340"
 
-ADMIN_NOTIFY_CHAT_ID = 7399488750
+ADMIN_NOTIFY_CHAT_ID = -1004441073113
 
 # Keep this in sync with MENU_BUTTONS in main.py. Duplicated here (rather
 # than imported) to avoid a circular import, since main.py imports this
