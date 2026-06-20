@@ -88,10 +88,10 @@ async def start_gcash_topup(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await query.answer()
     await query.message.edit_text(
         "<blockquote>🇵🇭 <b>Enter deposit amount</b> ‟</blockquote>\n\n"
-        f"<b>Method:</b> GCash\n"
+        f"<b>Network:</b> GCash\n"
         f"<b>Minimum:</b> {_format_php(MIN_AMOUNT_PHP)}\n"
         f"<b>Maximum:</b> {_format_php(MAX_AMOUNT_PHP)}\n\n"
-        "<i>Send numbers only, e.g. 500</i>",
+        "<i>Send numbers only, e.g. 50</i>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Back", callback_data="payment_back")],
@@ -145,6 +145,11 @@ async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAUL
         f"<pre><code>{GCASH_ACCOUNT_NAME}</code></pre>\n"
         f"📞 <b>GCash number:</b>👇\n"
         f"<pre><code>{GCASH_NUMBER}</code></pre>\n\n"
+        "⚠️ <i>Transfer fees may apply depending on your bank/e-wallet.</i>\n\n"
+        "<blockquote>🔔 <b>Transfer Fee Notice</b> ‟</blockquote>\n\n"
+        "• Some banks/e-wallets deduct a small transfer fee when sending via InstaPay.\n"
+        f"• The amount received in our wallet must be exactly <code>{unique_amount:.2f}</code>.\n"
+        "• If your platform deducts fees, please add them on top of the payment amount.\n\n"
         "<blockquote>📌 <b>Important</b> ‟</blockquote>\n\n"
         "• All deposits are <b>non-refundable</b>.\n"
         "• Send the <b>exact amount</b> shown above — the centavos matter, "
