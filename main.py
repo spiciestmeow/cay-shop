@@ -444,6 +444,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
         # else: fall through below so the menu button still does its thing
 
+    # ── GCash receipt awaiting (any user) ──
+    if ud.get("awaiting_receipt"):
+        await update.message.reply_text(
+            "📸 Please send your GCash receipt as a <b>photo</b>, not text.",
+            parse_mode="HTML",
+        )
+        return
+
     # ── Redeem code entry (any user) ──
     if ud.get("awaiting") == "redeem_code":
         await db.clear_session(user_id)  # consume the awaiting state either way
@@ -488,7 +496,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         f"<blockquote>"
                         f"👤 <b>User:</b> <code>{mask_user_id(user_id)}</code>\n"
                         f"💵 <b>Amount:</b> 🤑\n"
-                        f"💳 <b>Method:</b> Redeem Code"
+                        f"💳 <b>Method:</b> Redeem Code 💳"
                         f"</blockquote>"
                     ),
                     parse_mode="HTML",
@@ -563,6 +571,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             reply_markup=MAIN_MENU,
         )
 
+async def handle_gcash_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    ud = await db.get_session(user_id)
+    if ud.get("awaiting_receipt"):
+        await gcash_topup.handle_gcash_receipt_photo(update, context)
 
 # ─── ADMIN TEXT INPUT LOGIC ──────────────────────────────────────────────────
 
@@ -1631,7 +1644,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         except Exception:
             pass
 
-        amount_usd = round(amount / 56.0, 2)
+        amount_usd = round(amount / gcash_topup.PHP_TO_USD_RATE, 2)
 
         # ── Notify user with actual amount ──
         await context.bot.send_message(
@@ -1735,6 +1748,10 @@ def main() -> None:
     app.add_handler(CommandHandler("contactadmin", contactadmin_command))
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(MessageHandler(
+        filters.PHOTO & ~filters.COMMAND,
+        handle_gcash_receipt,
+    ))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_error_handler(error_handler)
 
