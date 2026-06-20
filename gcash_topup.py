@@ -332,11 +332,13 @@ async def handle_gcash_paid(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         "Our team will verify your transaction and credit your balance shortly. "
         "You'll be notified once it's confirmed."
     )
-    if query.message.caption:
-        await query.message.edit_caption(caption=confirmation_text, parse_mode="HTML")
-    else:
-        await query.message.edit_text(confirmation_text, parse_mode="HTML")
-
+    # Delete the QR photo message, then send a plain text confirmation
+    await query.message.delete()
+    await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text=confirmation_text,
+        parse_mode="HTML",
+    )
 
 async def handle_gcash_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
