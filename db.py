@@ -151,12 +151,22 @@ async def get_or_create_user(user_id: int, username: str | None, full_name: str 
     }).execute()
     return ins.data[0] if ins.data else {}
 
-
 async def get_user(user_id: int) -> dict | None:
     c = _client()
     res = c.table(USERS_TABLE).select("*").eq("user_id", user_id).limit(1).execute()
     return res.data[0] if res.data else None
 
+async def credit_balance(user_id: int, amount_php: float) -> None:
+    PHP_TO_USD_RATE = 56.0  # update this to current rate
+    amount_usd = round(amount_php / PHP_TO_USD_RATE, 2)
+    
+    c = _client()
+    res = c.table(USERS_TABLE).select("balance").eq("user_id", user_id).limit(1).execute()
+    if not res.data:
+        return
+    current_balance = float(res.data[0].get("balance") or 0)
+    new_balance = round(current_balance + amount_usd, 2)
+    c.table(USERS_TABLE).update({"balance": new_balance}).eq("user_id", user_id).execute()
 
 # ─── SESSION STATE ────────────────────────────────────────────────────────────
 
