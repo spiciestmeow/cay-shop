@@ -904,16 +904,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             remaining = next_tier["min"] - total_spent
             progress_text = (
                 f"{bar} {pct}%\n"
-                f"${total_spent:.2f} / ${next_tier['min']:.2f}\n"
-                f"Remaining: ${remaining:.2f}\n\n"
-                f"Next status: <b>{next_tier['name']}</b> • discount {next_tier['discount']}%"
+                f"<b>${total_spent:.2f} / ${next_tier['min']:.2f}</b>\n"
+                f"Remaining: <b>${remaining:.2f}</b>\n\n"
+                f"Next status: <b>{next_tier['name']}</b> • discount <b>{next_tier['discount']}%</b>"
             )
         else:
             progress_text = "🏆 You've reached the highest status!"
 
         text = (
             f"🏅 <b>Statuses</b>\n\n"
-            f"Current status: <b>{current['name']}</b> • discount {current['discount']}%\n\n"
+            f"Current status: <b>{current['name']}</b> • discount <b>{current['discount']}%\n\n"
             f"Progress to the next level:\n"
             f"{progress_text}"
         )
@@ -941,8 +941,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             is_current = db.get_status_tier(total_spent)["name"] == tier["name"]
             icon = "✅" if is_current else "•"
             lines.append(
-                f"{icon} <b>{tier['name']}</b> — from ${tier['min']:.2f}\n"
-                f"  Bonus: {tier['discount']}% product discount"
+                f"{icon} <b>{tier['name']}</b> — from <b>${tier['min']:.2f}</b>\n"
+                f"  Bonus: <b>{tier['discount']}%</b> product discount\n"
             )
         await query.answer()
         await query.message.edit_text(
