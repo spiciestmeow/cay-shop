@@ -174,7 +174,7 @@ async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAUL
         "• Send the <b>exact amount</b> shown above — the centavos matter, "
         "they're how we match your payment.\n"
         "• Only send via <b>GCash</b>.\n\n"
-        "<blockquote>🕓 <b>Manual Confirmation</b></blockquote>\n"
+        "<blockquote>🕓 <b>Manual Confirmation</b></blockquote>"
         "<i>Once you've paid, tap <b>\"I've Paid\"</b> below. Your balance will be "
         "credited after our team verifies the transaction — usually within "
         "a few minutes.</i>"
