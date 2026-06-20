@@ -250,7 +250,7 @@ def build_profile_text(tg_user, db_user: dict) -> str:
         f"🏷️ <b>Product discount:</b> {db.get_status_tier(total_spent)['discount']}%\n"
         f"🛒 <b>Total purchases:</b> {total_purchases}\n"
         f"💸 <b>Spent (net):</b> ${total_spent:.2f}\n"
-        f"🤝 <b>Reseller discount:</b> ❌\n"
+        # f"🤝 <b>Reseller discount:</b> ❌\n"
         f"📅 <b>Registration date:</b> {reg_date}"
     )
 
@@ -1018,7 +1018,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("⬅️ Profile", callback_data="profile_back")],
-                [InlineKeyboardButton("✕ Close", callback_data="close")],
             ]),
         )
         return
@@ -1030,7 +1029,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if not purchases:
             await query.answer()
             await query.message.edit_text(
-                "🗒 <b>You have no orders yet.</b>\n\nPurchase from the Services section ⬇️",
+                "📭 <b>You have no orders yet.</b>\n\nPurchase from the Services section ⬇️",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("➡️ Back", callback_data="profile_back")],
