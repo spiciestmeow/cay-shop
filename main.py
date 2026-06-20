@@ -1252,12 +1252,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
 
         # ── Process the purchase ──
-        await db.record_purchase(user_id, final_price, product_name=prod['name'])
+        await db.record_purchase(user_id, final_price, product_name=prod['name'], is_admin_purchase=is_admin(user_id))
         await db.update_product_stock(prod_id, prod["stock"] - 1)
 
         await query.answer("✅ Purchase successful!", show_alert=True)
         import random, string
-        order_no = ''.join(random.choices(string.ascii_uppercase + string.digits, k=14))
+        order_no = 'LNK' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=11))
 
         await query.message.edit_text(
             f"✅ <b>Purchase Successful!</b>\n\n"
@@ -1280,14 +1280,27 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         # ── Process order number and total purchases ──
         import random, string
-        order_no = ''.join(random.choices(string.ascii_uppercase + string.digits, k=14))
+        order_no = 'LNK' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=11))
         cat = await db.get_category(prod["category_id"])
 
-        if not is_admin(user_id):
-            # Get real total purchases count (excluding admin test orders)
-            db_user_fresh = await db.get_user(user_id)
-            total_purchases = int(db_user_fresh.get("total_purchases", 1)) if db_user_fresh else 1
+        db_user_fresh = await db.get_user(user_id)
 
+        if is_admin(user_id):
+            admin_total = int(db_user_fresh.get("admin_total_purchases", 0)) if db_user_fresh else 0
+            admin_msg = (
+                f"<blockquote>"
+                f"🧪 <b>Admin Test Purchase</b>\n\n"
+                f"📧 <b>Service:</b> {cat['name'] if cat else '—'}\n"
+                f"👤 <b>By:</b> <code>ADMIN</code>\n"
+                f"🎁 <b>Plan:</b> {prod['name']}\n"
+                f"🧾 <b>Order No.:</b> <code>{order_no}</code>\n"
+                f"🔢 <b>QTY:</b> 1\n"
+                f"📊 <b>Admin Total:</b> {admin_total}"
+                f"</blockquote>"
+            )
+        else:
+            # Real user purchase — use user's total_purchases
+            total_purchases = int(db_user_fresh.get("total_purchases", 1)) if db_user_fresh else 1
             admin_msg = (
                 f"<blockquote>"
                 f"🎉 <b>New Purchase!</b>\n\n"
@@ -1299,21 +1312,24 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 f"📊 <b>Total Purchase!:</b> {total_purchases}"
                 f"</blockquote>"
             )
-            for admin_id in ADMIN_IDS:
-                try:
-                    await context.bot.send_message(chat_id=admin_id, text=admin_msg, parse_mode="HTML")
-                except Exception:
-                    pass
 
-            if CHANNEL_ID:
-                try:
-                    await context.bot.send_message(
-                        chat_id=CHANNEL_ID,
-                        text=admin_msg,
-                        parse_mode="HTML",
-                    )
-                except Exception:
-                    pass
+        # Always notify admins
+        for admin_id in ADMIN_IDS:
+            try:
+                await context.bot.send_message(chat_id=admin_id, text=admin_msg, parse_mode="HTML")
+            except Exception:
+                pass
+
+        # Always notify channel
+        if CHANNEL_ID:
+            try:
+                await context.bot.send_message(
+                    chat_id=CHANNEL_ID,
+                    text=admin_msg,
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
         return
 
     if data == "topup_from_buy":
