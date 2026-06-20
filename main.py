@@ -254,13 +254,13 @@ PROFILE_KEYBOARD = InlineKeyboardMarkup([
         InlineKeyboardButton("📋 My Orders", callback_data="profile_orders"),
     ],
     [
-        InlineKeyboardButton("💸 Withdraw", callback_data="profile_withdraw"),
+        # InlineKeyboardButton("💸 Withdraw", callback_data="profile_withdraw"),
         InlineKeyboardButton("🏦 Wallet statement", callback_data="profile_wallet"),
     ],
-    [
-        InlineKeyboardButton("📝 Withdraw requests", callback_data="profile_withdraw_req"),
-        InlineKeyboardButton("📄 Withdraw profile", callback_data="profile_withdraw_pro"),
-    ],
+    # [
+    #     InlineKeyboardButton("📝 Withdraw requests", callback_data="profile_withdraw_req"),
+    #     InlineKeyboardButton("📄 Withdraw profile", callback_data="profile_withdraw_pro"),
+    # ],
     [InlineKeyboardButton("✕ Close", callback_data="close")],
 ])
 
