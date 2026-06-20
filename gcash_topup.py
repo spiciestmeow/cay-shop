@@ -36,7 +36,7 @@ MIN_AMOUNT_PHP       = 50.0
 MAX_AMOUNT_PHP       = 50_000.0
 EXPIRY_MINUTES       = 15
 EXPIRY_SECONDS_TEST  = 15
-USE_TEST_EXPIRY      = True     # ← flip to False for production
+USE_TEST_EXPIRY      = False    # ← flip to False for production
 
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────
