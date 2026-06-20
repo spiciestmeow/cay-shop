@@ -47,7 +47,7 @@ ADMIN_NOTIFY_CHAT_ID = 7399488750
 MIN_AMOUNT_PHP = 50.0
 MAX_AMOUNT_PHP = 50000.0
 EXPIRY_MINUTES = 15        # real value for production
-EXPIRY_SECONDS_TEST = 5    # TEMP: short expiry for testing — remove when done testing
+EXPIRY_SECONDS_TEST = 10    # TEMP: short expiry for testing — remove when done testing
 USE_TEST_EXPIRY = True     # TEMP: flip to False to use EXPIRY_MINUTES instead
 
 
