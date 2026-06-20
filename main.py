@@ -789,7 +789,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             TELEGRAM_STARS_INFO,
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🎁 Send as Gift", url="https://t.me/gotactivate")],
+                [InlineKeyboardButton("🎁 Send as Gift", url="https://t.me/caydigitals")],
                 [InlineKeyboardButton("⬅️ Back", callback_data="payment_back")],
             ]),
         )
