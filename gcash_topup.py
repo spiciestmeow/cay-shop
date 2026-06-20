@@ -50,7 +50,6 @@ MIN_AMOUNT_PHP = 50.0
 MAX_AMOUNT_PHP = 50000.0
 EXPIRY_MINUTES = 15
 
-
 def _generate_unique_amount(base_amount: float) -> float:
     """
     Append a small unique centavo suffix to the requested amount so the
