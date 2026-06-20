@@ -55,7 +55,7 @@ MENU_BUTTONS = {
 MIN_AMOUNT_PHP = 50.0
 MAX_AMOUNT_PHP = 50000.0
 EXPIRY_MINUTES = 15        # real value for production
-EXPIRY_SECONDS_TEST = 5    # TEMP: short expiry for testing — remove when done testing
+EXPIRY_SECONDS_TEST = 15    # TEMP: short expiry for testing — remove when done testing
 USE_TEST_EXPIRY = True     # TEMP: flip to False to use EXPIRY_MINUTES instead
 
 
@@ -95,11 +95,11 @@ async def start_gcash_topup(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await db.set_session(user_id, {"awaiting": "gcash_amount"})
     await query.answer()
     await query.message.edit_text(
-        "<blockquote>🇵🇭 <b>Enter deposit amount</b> ‟</blockquote>\n\n"
-        f"<b>Method:</b> GCash\n"
-        f"<b>Minimum:</b> {_format_php(MIN_AMOUNT_PHP)}\n"
-        f"<b>Maximum:</b> {_format_php(MAX_AMOUNT_PHP)}\n\n"
-        "<i>Send numbers only, e.g. 500</i>",
+        "<blockquote>🇵🇭 <b>Enter deposit amount</b></blockquote>\n\n"
+        f"Network: <b>GCash</b>\n"
+        f"Minimum: <b>{_format_php(MIN_AMOUNT_PHP)}</b>\n"
+        f"Maximum: <b>{_format_php(MAX_AMOUNT_PHP)}</b>\n\n"
+        "<i>Send numbers only, e.g. 50</i>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Back", callback_data="payment_back")],
@@ -154,7 +154,7 @@ async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAUL
     )
 
     caption = (
-        "<blockquote>📱 <b>GCash Payment Request</b> ‟</blockquote>\n\n"
+        "<blockquote>📱 <b>GCash Payment Request</b></blockquote>\n\n"
         "✅ Scan the QR code or send payment to the number below.\n"
         f"⏳ <b>Expires in:</b> {expires_label}\n\n"
         f"🪙 <b>currency:</b> PHP (₱)\n"
@@ -165,7 +165,7 @@ async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAUL
         f"📞 <b>GCash number:</b>👇\n"
         f"<pre><code>{GCASH_NUMBER}</code></pre>\n\n"
         "⚠️ <i>Transfer fees may apply depending on your bank/e-wallet.</i>\n\n"
-        "<blockquote>🔔 <b>Transfer Fee Notice</b> ‟</blockquote>\n\n"
+        "<blockquote>🔔 <b>Transfer Fee Notice</b></blockquote>\n\n"
         "• Some banks/e-wallets deduct a small transfer fee when sending via InstaPay.\n"
         f"• The amount received in our wallet must be exactly <code>{unique_amount:.2f}</code>.\n"
         "• If your platform deducts fees, please add them on top of the payment amount.\n\n"
@@ -174,7 +174,7 @@ async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAUL
         "• Send the <b>exact amount</b> shown above — the centavos matter, "
         "they're how we match your payment.\n"
         "• Only send via <b>GCash</b>.\n\n"
-        "<blockquote>🕓 <b>Manual Confirmation</b> ‟</blockquote>\n\n"
+        "<blockquote>🕓 <b>Manual Confirmation</b></blockquote>\n\n"
         "<i>Once you've paid, tap \"I've Paid\" below. Your balance will be "
         "credited after our team verifies the transaction — usually within "
         "a few minutes.</i>"
