@@ -99,7 +99,7 @@ async def start_gcash_topup(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         f"Network: <b>GCash</b>\n"
         f"Minimum: <b>{_format_php(MIN_AMOUNT_PHP)}</b>\n"
         f"Maximum: <b>{_format_php(MAX_AMOUNT_PHP)}</b>\n\n"
-        "<i>Send numbers only, e.g. 50</i>",
+        "<i>Send numbers only, e.g. <b>50</b></i>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Back", callback_data="payment_back")],
@@ -169,13 +169,13 @@ async def handle_gcash_amount_input(update: Update, context: ContextTypes.DEFAUL
         "• Some banks/e-wallets deduct a small transfer fee when sending via InstaPay.\n"
         f"• The amount received in our wallet must be exactly <code>{unique_amount:.2f}</code>.\n"
         "• If your platform deducts fees, please add them on top of the payment amount.\n\n"
-        "<blockquote>📌 <b>Important</b> ‟</blockquote>\n\n"
+        "<blockquote>📌 <b>Important</b></blockquote>\n\n"
         "• All deposits are <b>non-refundable</b>.\n"
         "• Send the <b>exact amount</b> shown above — the centavos matter, "
         "they're how we match your payment.\n"
         "• Only send via <b>GCash</b>.\n\n"
-        "<blockquote>🕓 <b>Manual Confirmation</b></blockquote>\n\n"
-        "<i>Once you've paid, tap \"I've Paid\" below. Your balance will be "
+        "<blockquote>🕓 <b>Manual Confirmation</b></blockquote>\n"
+        "<i>Once you've paid, tap <b>\"I've Paid\"</b> below. Your balance will be "
         "credited after our team verifies the transaction — usually within "
         "a few minutes.</i>"
     )
