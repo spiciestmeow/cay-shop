@@ -187,3 +187,30 @@ async def set_session(user_id: int, state: dict) -> None:
 async def clear_session(user_id: int) -> None:
     c = _client()
     c.table(STATES_TABLE).delete().eq("user_id", user_id).execute()
+
+# ─── STATUS TIERS ────────────────────────────────────────────────────────────
+
+STATUS_TIERS = [
+    {"name": "Newbie",    "min": 0.0,    "discount": 0},
+    {"name": "Bronze",    "min": 200.0,  "discount": 1},
+    {"name": "Silver",    "min": 400.0,  "discount": 2},
+    {"name": "Gold",      "min": 500.0,  "discount": 3},
+    {"name": "Platinum",  "min": 1000.0, "discount": 4},
+    {"name": "Diamond",   "min": 2100.0, "discount": 5},
+    {"name": "Brilliant", "min": 5000.0, "discount": 6},
+]
+
+def get_status_tier(total_spent: float) -> dict:
+    """Return the current tier dict for a given total_spent."""
+    current = STATUS_TIERS[0]
+    for tier in STATUS_TIERS:
+        if total_spent >= tier["min"]:
+            current = tier
+    return current
+
+def get_next_tier(total_spent: float) -> dict | None:
+    """Return the next tier, or None if already at max."""
+    for tier in STATUS_TIERS:
+        if tier["min"] > total_spent:
+            return tier
+    return None

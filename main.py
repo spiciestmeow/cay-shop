@@ -239,7 +239,7 @@ def build_profile_text(tg_user, db_user: dict) -> str:
         f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
         f"👤 <b>Name:</b> {full_name}\n"
         f"💰 <b>Balance:</b> ${balance:.2f}\n"
-        f"⭐ <b>Level:</b> Newbie (1)\n"
+        f"⭐ <b>Level:</b> {db.get_status_tier(total_spent)['name']}\n"
         f"🏷️ <b>Product discount:</b> 0%\n"
         f"🛒 <b>Total purchases:</b> {total_purchases}\n"
         f"💸 <b>Spent (net):</b> ${total_spent:.2f}\n"
@@ -889,10 +889,88 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     # ── Profile ──
-    if data in ("profile_status", "profile_orders", "profile_withdraw",
+    if data == "profile_status":
+        db_user = await db.get_user(user_id)
+        total_spent = float(db_user.get("total_spent", 0.0)) if db_user else 0.0
+        current = db.get_status_tier(total_spent)
+        next_tier = db.get_next_tier(total_spent)
+
+        # Progress bar (10 blocks)
+        if next_tier:
+            progress_ratio = (total_spent - current["min"]) / (next_tier["min"] - current["min"])
+            filled = int(progress_ratio * 10)
+            bar = "🟩" * filled + "⬜" * (10 - filled)
+            pct = int(progress_ratio * 100)
+            remaining = next_tier["min"] - total_spent
+            progress_text = (
+                f"{bar} {pct}%\n"
+                f"${total_spent:.2f} / ${next_tier['min']:.2f}\n"
+                f"Remaining: ${remaining:.2f}\n\n"
+                f"Next status: <b>{next_tier['name']}</b> • discount {next_tier['discount']}%"
+            )
+        else:
+            progress_text = "🏆 You've reached the highest status!"
+
+        text = (
+            f"🏅 <b>Statuses</b>\n\n"
+            f"Current status: <b>{current['name']}</b> • discount {current['discount']}%\n\n"
+            f"Progress to the next level:\n"
+            f"{progress_text}"
+        )
+        await query.answer()
+        await query.message.edit_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("🗂 All levels", callback_data="status_all_levels"),
+                    InlineKeyboardButton("⬅️ Profile", callback_data="profile_back"),
+                ],
+                [InlineKeyboardButton("✕ Close", callback_data="close")],
+            ]),
+        )
+        return
+
+    if data == "status_all_levels":
+        lines = ["🗂 <b>All statuses</b>\n\n"
+                 "Statuses are based on your net purchase turnover excluding "
+                 "refunds.\n"]
+        db_user = await db.get_user(user_id)
+        total_spent = float(db_user.get("total_spent", 0.0)) if db_user else 0.0
+        for tier in db.STATUS_TIERS:
+            is_current = db.get_status_tier(total_spent)["name"] == tier["name"]
+            icon = "✅" if is_current else "•"
+            lines.append(
+                f"{icon} <b>{tier['name']}</b> — from ${tier['min']:.2f}\n"
+                f"  Bonus: {tier['discount']}% product discount"
+            )
+        await query.answer()
+        await query.message.edit_text(
+            "\n".join(lines),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("🏅 My Status", callback_data="profile_status"),
+                    InlineKeyboardButton("⬅️ Profile", callback_data="profile_back"),
+                ],
+                [InlineKeyboardButton("✕ Close", callback_data="close")],
+            ]),
+        )
+        return
+
+    if data == "profile_back":
+        db_user = await db.get_user(user_id)
+        await query.answer()
+        await query.message.edit_text(
+            build_profile_text(update.effective_user, db_user),
+            parse_mode="HTML",
+            reply_markup=PROFILE_KEYBOARD,
+        )
+        return
+
+    if data in ("profile_orders", "profile_withdraw",
                 "profile_wallet", "profile_withdraw_req", "profile_withdraw_pro"):
         labels = {
-            "profile_status": "🏅 My Status",
             "profile_orders": "📋 My Orders",
             "profile_withdraw": "💸 Withdraw",
             "profile_wallet": "👛 Wallet statement",
