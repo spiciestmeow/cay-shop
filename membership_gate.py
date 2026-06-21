@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Numeric chat ID or "@username" works for get_chat_member.
 # GROUP_ID    = "@your_group_username"      # ← TODO: replace
-CHANNEL_ID  = "-1003803694841"    # ← TODO: replace
+CHANNEL_ID  = "@caysredirect"    # ← TODO: replace
 
 # Public-facing invite links shown on the buttons (can differ from the IDs
 # above, e.g. if you use a private invite link instead of a public @username).
