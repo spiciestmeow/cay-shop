@@ -381,6 +381,7 @@ def admin_prod_edit_keyboard(prod_id: int, cat_id: int) -> InlineKeyboardMarkup:
 
 # ─── USER COMMAND HANDLERS ───────────────────────────────────────────────────
 
+# NEW
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     tg_user = update.effective_user
     await db.get_or_create_user(
@@ -388,6 +389,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         username=tg_user.username,
         full_name=tg_user.full_name,
     )
+
+    # ── Auto-update username / full_name if changed ──
+    db_user = await db.get_user(tg_user.id)
+    if db_user:
+        updates = {}
+        if db_user.get("username") != tg_user.username:
+            updates["username"] = tg_user.username
+        if db_user.get("full_name") != tg_user.full_name:
+            updates["full_name"] = tg_user.full_name
+        if updates:
+            db._client().table(db.USERS_TABLE).update(updates).eq("user_id", tg_user.id).execute()
+            logger.info(f"Updated profile for user {tg_user.id}: {updates}")
 
     args = context.args  # python-telegram-bot populates this from
                         # "/start ref_XXXX"
