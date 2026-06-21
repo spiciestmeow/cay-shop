@@ -1,5 +1,6 @@
 import os
 import asyncio
+import membership_gate
 import logging
 from datetime import datetime
 from telegram import (
@@ -387,6 +388,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         full_name=tg_user.full_name,
     )
 
+    if not await membership_gate.check_membership(context, tg_user.id):
+        await membership_gate.send_gate_message(update, context)
+        return
+
     # Clear any stale GCash deposit flow if user runs /start mid-flow
     ud = await db.get_session(tg_user.id)
     if ud.get("awaiting") == "gcash_amount" or ud.get("gcash_pending"):
@@ -438,6 +443,10 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = update.message.text
     user_id = update.effective_user.id
+
+    if not await membership_gate.check_membership(context, user_id):
+        await membership_gate.send_gate_message(update, context)
+        return
 
     # ── GCash amount entry (any user, not just admins) ──
     ud = await db.get_session(user_id)
@@ -576,6 +585,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def handle_gcash_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
+
+    if not await membership_gate.check_membership(context, update.effective_user.id):
+        await membership_gate.send_gate_message(update, context)
+        return
+
     ud = await db.get_session(user_id)
     if ud.get("awaiting_receipt"):
         await gcash_topup.handle_gcash_receipt_photo(update, context)
@@ -932,6 +946,24 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     data = query.data
     user_id = update.effective_user.id
+
+    # ── Membership gate ──
+    if data == "gate_check":
+        await membership_gate.handle_gate_check(update, context)
+        if await membership_gate.check_membership(context, user_id, use_cache=False):
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="<blockquote><b>👋 Welcome to CayShop Bot!</b></blockquote>\n"
+                     "I'm here to help you purchase subscriptions and digital "
+                     "services easily and securely.",
+                parse_mode="HTML",
+                reply_markup=MAIN_MENU,
+            )
+        return
+
+    if not await membership_gate.check_membership(context, user_id):
+        await membership_gate.send_gate_message(update, context)
+        return
 
     # ── General ──
     if data == "close":
