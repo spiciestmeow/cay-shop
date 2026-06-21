@@ -1684,37 +1684,48 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if data.startswith("admin_approve_gcash_"):
         parts = data.split("_")
-        # format: admin_approve_gcash_{user_id}_{amount}
         target_user_id = int(parts[3])
-        amount = float(parts[4])
-        await db.credit_balance(target_user_id, amount)  # wire to your existing credit function
+        amount_php = float(parts[4])
+
+        rate = await db.get_php_usd_rate()
+        amount_usd = round(amount_php / rate, 2)
+
+        await db.credit_balance(target_user_id, amount_php)
         await query.answer("✅ Balance credited!", show_alert=True)
+
+        # Rebuild caption with updated status line, remove all buttons
         try:
-            await query.message.edit_text(
-                query.message.text + "\n\n✅ <b>APPROVED</b> — balance credited.",
-                parse_mode="HTML",
-                reply_markup=None,
+            original = query.message.caption or ""
+            updated_caption = original.replace(
+                "🟡 <b>Status: PENDING VERIFICATION</b>",
+                "🟢 <b>Status: APPROVED ✅</b>"
             )
-        except Exception:
-            pass
+            await query.message.edit_caption(
+                caption=updated_caption,
+                parse_mode="HTML",
+                reply_markup=None,  # removes all buttons
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit admin message: {e}")
 
-        amount_usd = round(amount / gcash_topup.PHP_TO_USD_RATE, 2)
+        # Notify user
+        try:
+            await context.bot.send_message(
+                chat_id=target_user_id,
+                text=(
+                    f"🤑 <b>New Credits Added!</b>\n\n"
+                    f"<blockquote>"
+                    f"👤 <b>User:</b> <code>{mask_user_id(target_user_id)}</code>\n"
+                    f"💵 <b>Amount:</b> ${amount_usd:.2f} (₱{amount_php:.2f})\n"
+                    f"💳 <b>Method:</b> GCash Deposit 🇵🇭"
+                    f"</blockquote>"
+                ),
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify user {target_user_id}: {e}")
 
-        # ── Notify user with actual amount ──
-        await context.bot.send_message(
-            chat_id=target_user_id,
-            text=(
-                f"🤑 <b>New Credits Added!</b>\n\n"
-                f"<blockquote>"
-                f"👤 <b>User:</b> <code>{mask_user_id(target_user_id)}</code>\n"
-                f"💵 <b>Amount:</b> ${amount_usd:.2f} (₱{amount:.2f})\n"
-                f"💳 <b>Method:</b> GCash Deposit 🇵🇭"
-                f"</blockquote>"
-            ),
-            parse_mode="HTML",
-        )
-
-        # ── Notify channel with emoji instead of amount ──
+        # Notify channel
         if CHANNEL_ID:
             try:
                 await context.bot.send_message(
@@ -1729,26 +1740,38 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     ),
                     parse_mode="HTML",
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to notify channel: {e}")
         return
 
     if data.startswith("admin_reject_gcash_"):
         target_user_id = int(data.split("_")[3])
         await query.answer("❌ Claim rejected.", show_alert=True)
+
+        # Rebuild caption with updated status line, remove all buttons
         try:
-            await query.message.edit_text(
-                query.message.text + "\n\n❌ <b>REJECTED</b> — no balance credited.",
-                parse_mode="HTML",
-                reply_markup=None,
+            original = query.message.caption or ""
+            updated_caption = original.replace(
+                "🟡 <b>Status: PENDING VERIFICATION</b>",
+                "🔴 <b>Status: REJECTED ❌</b>"
             )
-        except Exception:
-            pass
-        await context.bot.send_message(
-            chat_id=target_user_id,
-            text="❌ <b>Deposit not verified.</b>\n\nWe could not verify your GCash payment. Please contact support if you believe this is an error.",
-            parse_mode="HTML",
-        )
+            await query.message.edit_caption(
+                caption=updated_caption,
+                parse_mode="HTML",
+                reply_markup=None,  # removes all buttons
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit admin message: {e}")
+
+        # Notify user
+        try:
+            await context.bot.send_message(
+                chat_id=target_user_id,
+                text="❌ <b>Deposit not verified.</b>\n\nWe could not verify your GCash payment. Please contact support if you believe this is an error.",
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify user {target_user_id}: {e}")
         return
 
     # Unhandled callback
