@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 GCASH_QR_IMAGE_PATH  = "https://i.ibb.co/CKd4m9GB/photo-2026-06-20-11-02-58.jpg"
 GCASH_ACCOUNT_NAME   = "CL**DE B."
-GCASH_NUMBER         = "9956274340"
+GCASH_NUMBER         = "+639563791133"
 ADMIN_NOTIFY_CHAT_ID = -1004441073113
 
 MENU_BUTTONS = {
@@ -36,7 +36,7 @@ MIN_AMOUNT_PHP       = 50.0
 MAX_AMOUNT_PHP       = 50_000.0
 EXPIRY_MINUTES       = 15
 EXPIRY_SECONDS_TEST  = 15
-USE_TEST_EXPIRY      = True     # ← flip to False for production
+USE_TEST_EXPIRY      = False    # ← flip to False for production
 
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────

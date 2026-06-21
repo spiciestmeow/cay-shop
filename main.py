@@ -204,7 +204,7 @@ def build_payment_methods_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🔗 Polygon (USDT)", callback_data="payment_polygon")],
         [InlineKeyboardButton("🔗 TRC20 (USDT)", callback_data="payment_trc20")],
         [InlineKeyboardButton("⭐ Telegram Stars", callback_data="payment_stars")],
-        [InlineKeyboardButton("🇵🇭 GCash", callback_data="payment_gcash")],
+        [InlineKeyboardButton("🇵🇭 GCash (PHP)", callback_data="payment_gcash")],
         [InlineKeyboardButton("✕ Close", callback_data="close")],
     ])  
 
