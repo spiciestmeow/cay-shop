@@ -415,7 +415,7 @@ async def mark_interaction_and_maybe_qualify(context: ContextTypes.DEFAULT_TYPE,
                 chat_id=CHANNEL_ID,
                 text=(
                     f"<blockquote>🎁 <b>Active Referral!</b>\n\n"
-                    f"👤 <b>Referrer:</b> {referrer_name}\n"
+                    f"👤 <b>Referrer:</b> <a href='tg://user?id={referrer_id}'>{referrer_name}</a>\n"
                     f"🔗 <b>Active Referrals:</b> {qualified_count}\n"
                     f"💰 <b>Total earned from invites:</b> ${total_earned:.2f}\n"
                     f"⏳ <b>{remaining}</b> more to earn <b>${REWARD_USD:.2f}</b></blockquote>"
