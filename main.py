@@ -1,6 +1,7 @@
 import os
 import asyncio
 import membership_gate
+import invite_center
 import logging
 from datetime import datetime
 from telegram import (
@@ -388,6 +389,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         full_name=tg_user.full_name,
     )
 
+    args = context.args  # python-telegram-bot populates this from
+                        # "/start ref_XXXX"
+    if args and args[0].startswith("ref_"):
+        ref_code = args[0][len("ref_"):]
+        handled = await invite_center.handle_start_with_ref(update, context, ref_code)
+        if handled:
+            return  # CAPTCHA prompt was sent; stop here
+
     if not await membership_gate.check_membership(context, tg_user.id):
         await membership_gate.send_gate_message(update, context)
         return
@@ -447,6 +456,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not await membership_gate.check_membership(context, user_id):
         await membership_gate.send_gate_message(update, context)
         return
+
+    await invite_center.mark_interaction_and_maybe_qualify(context, user_id)
 
     # ── GCash amount entry (any user, not just admins) ──
     ud = await db.get_session(user_id)
@@ -536,11 +547,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
     elif text == "🎁 Invite Center":
-        await update.message.reply_text(
-            "🎁 <b>Invite Center</b>\n\nShare your referral link and earn rewards!",
-            parse_mode="HTML",
-            reply_markup=MAIN_MENU,
-        )
+        await invite_center.show_invite_center(update, context)
 
     elif text == "💰 Top up balance":
             await update.message.reply_text(
@@ -947,10 +954,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     data = query.data
     user_id = update.effective_user.id
 
+    if data == "invite_captcha_pass":
+        await invite_center.handle_captcha_pass(update, context)
+        return
+
     # ── Membership gate ──
     if data == "gate_check":
         await membership_gate.handle_gate_check(update, context)
         if await membership_gate.check_membership(context, user_id, use_cache=False):
+            await invite_center.advance_after_gate_pass(user_id)
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
                 text="<blockquote><b>👋 Welcome to CayShop Bot!</b></blockquote>\n"
@@ -963,6 +975,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if not await membership_gate.check_membership(context, user_id):
         await membership_gate.send_gate_message(update, context)
+        return
+
+    await invite_center.mark_interaction_and_maybe_qualify(context, user_id)
+
+    if data == "invite_stats":
+        await invite_center.show_invite_stats(update, context)
+        return
+    if data == "invite_link":
+        await invite_center.show_invite_link(update, context)
+        return
+    if data == "invite_back":
+        await invite_center.show_invite_back(update, context)
         return
 
     # ── General ──

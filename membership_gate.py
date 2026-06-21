@@ -140,7 +140,7 @@ async def handle_gate_check(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             pass
         await context.bot.send_message(
             chat_id=query.message.chat_id,
-            text="✅ <b>Verified successfully. Welcome!</b>",
+            text="✅ Verified successfully. Welcome!",
             parse_mode="HTML",
         )
         # Caller's main.py should show the main menu right after this —
