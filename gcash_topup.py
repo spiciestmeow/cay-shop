@@ -36,7 +36,7 @@ MIN_AMOUNT_PHP       = 50.0
 MAX_AMOUNT_PHP       = 50_000.0
 EXPIRY_MINUTES       = 15
 EXPIRY_SECONDS_TEST  = 15
-USE_TEST_EXPIRY      = True     # ← flip to False for production
+USE_TEST_EXPIRY      = False     # ← flip to False for production
 
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────
@@ -321,7 +321,6 @@ async def handle_gcash_receipt_photo(update: Update, context: ContextTypes.DEFAU
             InlineKeyboardButton("✅ Approve", callback_data=f"admin_approve_gcash_{user_id}_{php_amount}"),
             InlineKeyboardButton("❌ Reject",  callback_data=f"admin_reject_gcash_{user_id}"),
         ],
-        [InlineKeyboardButton("👤 Open user profile", callback_data=f"admin_view_user_{user_id}")],
     ])
 
     photo_file_id = update.message.photo[-1].file_id

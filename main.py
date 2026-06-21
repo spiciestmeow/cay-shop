@@ -204,7 +204,7 @@ def build_payment_methods_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🔗 Polygon (USDT)", callback_data="payment_polygon")],
         [InlineKeyboardButton("🔗 TRC20 (USDT)", callback_data="payment_trc20")],
         [InlineKeyboardButton("⭐ Telegram Stars", callback_data="payment_stars")],
-        [InlineKeyboardButton("🇵🇭 GCash", callback_data="payment_gcash")],
+        [InlineKeyboardButton("🇵🇭 GCash (PHP)", callback_data="payment_gcash")],
         [InlineKeyboardButton("✕ Close", callback_data="close")],
     ])  
 
@@ -1690,7 +1690,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         rate = await db.get_php_usd_rate()
         amount_usd = round(amount_php / rate, 2)
 
-        await db.credit_balance(target_user_id, amount_php)
+        await db.credit_balance(target_user_id, amount_php, rate=rate)
         await query.answer("✅ Balance credited!", show_alert=True)
 
         # Get existing plain-text caption and replace the status line

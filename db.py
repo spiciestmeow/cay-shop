@@ -193,8 +193,9 @@ async def get_user(user_id: int) -> dict | None:
     res = c.table(USERS_TABLE).select("*").eq("user_id", user_id).limit(1).execute()
     return res.data[0] if res.data else None
 
-async def credit_balance(user_id: int, amount_php: float) -> None:
-    rate = await get_php_usd_rate()          # ← dynamic rate from DB
+async def credit_balance(user_id: int, amount_php: float, rate: float = None) -> None:
+    if rate is None:
+        rate = await get_php_usd_rate()
     amount_usd = round(amount_php / rate, 2)
 
     c = _client()
