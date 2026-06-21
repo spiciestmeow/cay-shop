@@ -133,7 +133,7 @@ async def handle_gate_check(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     passed = await check_membership(context, user_id, use_cache=False)
 
     if passed:
-        await query.answer("✅ Verified! Welcome in.", show_alert=True)
+        await query.answer("✅ The subscription has been verified", show_alert=True)
         try:
             await query.message.delete()
         except Exception:
