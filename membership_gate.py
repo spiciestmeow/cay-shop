@@ -25,13 +25,13 @@ logger = logging.getLogger(__name__)
 # ─── CONFIG — fill these in ────────────────────────────────────────────────
 
 # Numeric chat ID or "@username" works for get_chat_member.
-GROUP_ID    = "@your_group_username"      # ← TODO: replace
-CHANNEL_ID  = "@your_channel_username"    # ← TODO: replace
+# GROUP_ID    = "@your_group_username"      # ← TODO: replace
+CHANNEL_ID  = "-1003803694841"    # ← TODO: replace
 
 # Public-facing invite links shown on the buttons (can differ from the IDs
 # above, e.g. if you use a private invite link instead of a public @username).
-GROUP_URL   = "https://t.me/your_group_username"     # ← TODO: replace
-CHANNEL_URL = "https://t.me/your_channel_username"    # ← TODO: replace
+# GROUP_URL   = "https://t.me/your_group_username"     # ← TODO: replace
+CHANNEL_URL = "https://t.me/caysredirect"    # ← TODO: replace
 
 # How long (seconds) a "passed" membership check is cached in the session
 # before we re-check with Telegram. Keeps strict enforcement without
@@ -42,16 +42,16 @@ CACHE_SECONDS = 60
 MEMBER_STATUSES = {"member", "administrator", "creator"}
 
 GATE_TEXT = (
-    "👋 <b>Hello there!</b>\n\n"
+    "Hello there! 👋\n"
     "To use this bot and access our services, you must first join our "
     "Telegram group and channel.\n\n"
-    "👇 Click the buttons below to join, then click <b>\"Check Membership\"</b>."
+    "👇 Click the buttons below to join, then click \"Check Now\"."
 )
 
 
 def _gate_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💬 Join Group", url=GROUP_URL)],
+        # [InlineKeyboardButton("💬 Join Group", url=GROUP_URL)],
         [InlineKeyboardButton("📢 Join Channel", url=CHANNEL_URL)],
         [InlineKeyboardButton("✅ Check Membership", callback_data="gate_check")],
     ])
@@ -83,9 +83,11 @@ async def check_membership(context: ContextTypes.DEFAULT_TYPE, user_id: int, use
         if cached_at and (time.time() - cached_at) < CACHE_SECONDS:
             return True
 
-    in_group   = await _is_member_of(context, GROUP_ID, user_id)
+    # in_group   = await _is_member_of(context, GROUP_ID, user_id)
     in_channel = await _is_member_of(context, CHANNEL_ID, user_id)
-    passed = in_group and in_channel
+    # passed = in_group and in_channel
+    passed = in_channel
+
 
     if passed:
         ud["gate_passed_at"] = time.time()
@@ -140,7 +142,6 @@ async def handle_gate_check(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # see main_after_gate() below, called from the handler in main.py.
     else:
         await query.answer(
-            "❌ You haven't joined both the group and channel yet. "
-            "Please join, then tap Check Membership again.",
+            "❌ You are not subscribed yet. Join first, then click verify again.",
             show_alert=True,
         )
