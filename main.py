@@ -49,7 +49,7 @@ MAIN_MENU = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
-BOT_POLICY = (
+DEFAULT_BOT_POLICY = (
     "🗒 <b>Bot Policy</b>\n\n"
     "We believe in complete transparency with our customers and do not seek to annoy or exploit anyone. "
     "Please read the following policy carefully before using our services:\n\n"
@@ -69,6 +69,12 @@ BOT_POLICY = (
     "5️⃣ <b>Our Promise:</b>\n"
     "We promise to always be honest and faithful with you, and strive to be the best in providing these services."
 )
+
+POLICY_SETTING_KEY = "bot_policy"
+
+async def get_bot_policy() -> str:
+    saved = await db.get_setting(POLICY_SETTING_KEY)
+    return saved if saved else DEFAULT_BOT_POLICY
 
 HELP_TEXT = (
     "💬 <b>Support &amp; Assistance</b>\n\n"
@@ -284,6 +290,7 @@ def admin_main_keyboard():
         [InlineKeyboardButton("🎫 Generate Redeem Code", callback_data="admin_gen_redeem")],
         [InlineKeyboardButton("➕ Add Balance",          callback_data="admin_add_balance")],
         [InlineKeyboardButton("⚙️ Bot Settings",         callback_data="admin_settings")],
+        [InlineKeyboardButton("📋 Edit Bot Policy",       callback_data="admin_edit_policy")],
         [InlineKeyboardButton("✕ Close", callback_data="close")],
     ])
 
@@ -580,8 +587,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
     elif text == "📋 Bot Policy":
+        policy_text = await get_bot_policy()
         await update.message.reply_text(
-            BOT_POLICY,
+            policy_text,
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✕ Close", callback_data="close")]
@@ -847,6 +855,51 @@ async def _process_admin_input(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup=MAIN_MENU,
         )
  
+
+    elif awaiting == "bot_policy_text":
+        ud.pop("awaiting", None)
+        await db.set_session(user_id, ud)
+
+        if text.strip().lower() == "/cancel":
+            await update.message.reply_text(
+                "❌ Cancelled. The policy was not changed.",
+                reply_markup=MAIN_MENU,
+            )
+            return
+
+        if text.strip().lower() == "/reset":
+            await db.set_setting(POLICY_SETTING_KEY, "")
+            await update.message.reply_text(
+                "♻️ Policy reset to the original built-in text.\n\n"
+                f"{DEFAULT_BOT_POLICY}",
+                parse_mode="HTML",
+                reply_markup=MAIN_MENU,
+            )
+            return
+
+        new_policy = update.message.text or ""
+        try:
+            await update.message.reply_text(
+                f"🔍 <b>Preview:</b>\n\n{new_policy}",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✕ Close", callback_data="close")]]),
+            )
+        except Exception:
+            await update.message.reply_text(
+                "❌ That text has invalid HTML formatting (an unclosed or mismatched tag), so it wasn't saved.\n\n"
+                "Stick to simple tags like <code>&lt;b&gt;bold&lt;/b&gt;</code> and <code>&lt;i&gt;italic&lt;/i&gt;</code>, "
+                "and make sure every tag you open is closed. Send the corrected text again, or /cancel.",
+                parse_mode="HTML",
+            )
+            await db.set_session(user_id, {"awaiting": "bot_policy_text"})
+            return
+
+        await db.set_setting(POLICY_SETTING_KEY, new_policy)
+        await update.message.reply_text(
+            "✅ <b>Bot Policy updated!</b>\n\nEvery user will now see this new version immediately — no restart needed.",
+            parse_mode="HTML",
+            reply_markup=MAIN_MENU,
+        )
 
     elif awaiting == "add_balance_user_id":
         try:
@@ -1682,6 +1735,26 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             parse_mode="HTML",
             reply_markup=ReplyKeyboardRemove(),
         )
+        return
+
+    if data == "admin_edit_policy":
+        current = await get_bot_policy()
+        await query.answer()
+        await query.message.reply_text(
+            f"📋 <b>Current Bot Policy</b>\n\n{current}",
+            parse_mode="HTML",
+        )
+        await query.message.reply_text(
+            "✏️ Send the <b>new policy text</b> now and it will replace the message above for every user "
+            "— no restart needed.\n\n"
+            "• HTML formatting is supported: <code>&lt;b&gt;</code>, <code>&lt;i&gt;</code>, <code>&lt;code&gt;</code>, "
+            "line breaks just by pressing Enter.\n"
+            "• Send <code>/cancel</code> to leave it as is.\n"
+            "• Send <code>/reset</code> to restore the original built-in policy.",
+            parse_mode="HTML",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        await db.set_session(user_id, {"awaiting": "bot_policy_text"})
         return
 
     if data == "admin_categories":
