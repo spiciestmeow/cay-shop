@@ -4,7 +4,7 @@ qualification stages, and an automatic $1-per-10-qualified-invites reward.
 
 FUNNEL (per referred user):
     sign_up              → they /start'd via someone's ref_XXXX link
-    awaiting_captcha      → must tap "I'm not a bot"
+    awaiting_captcha      → must solve a math CAPTCHA (5 choices)
     awaiting_join          → must pass the membership gate (group+channel)
     awaiting_interaction   → must send 1 message / tap 1 button after joining
     qualified               → counts toward the referrer's reward batch
@@ -32,14 +32,16 @@ WIRING REQUIRED in main.py — see the bottom of this file.
 import logging
 import random
 import string
+import os
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 
 import db
 import membership_gate
-import os
-CHANNEL_ID = os.environ.get("CHANNEL_ID", "-1004441073113") 
+
+CHANNEL_ID = os.environ.get("CHANNEL_ID", "-1004441073113")
+
 logger = logging.getLogger(__name__)
 
 # ─── CONFIG ─────────────────────────────────────────────────────────────────
@@ -53,6 +55,21 @@ STAGE_AWAITING_INTERACTION = "awaiting_interaction"
 STAGE_QUALIFIED            = "qualified"
 
 INVITES_TABLE = "cay_shop_invites"
+
+# ─── MATH CAPTCHA CONFIG ────────────────────────────────────────────────────
+
+# Operators available for CAPTCHA questions
+CAPTCHA_OPERATORS = ["+", "-", "×"]
+
+# Number ranges per operator  (a OP b, answer always stays positive)
+CAPTCHA_NUM_RANGE = (1, 12)
+
+# How many answer choices to show (including the correct one)
+CAPTCHA_NUM_CHOICES = 5
+
+# Callback prefix for captcha answers
+CAPTCHA_CB_PREFIX = "captcha_ans_"
+CAPTCHA_CB_RETRY  = "captcha_retry"
 
 
 def _client():
@@ -128,12 +145,84 @@ async def get_invites_for_referrer(referrer_id: int) -> list[dict]:
     return res.data or []
 
 
+# ─── MATH CAPTCHA HELPERS ────────────────────────────────────────────────────
+
+def _generate_captcha() -> dict:
+    """
+    Returns a dict with:
+        question  : str  e.g. "7 + 5"
+        answer    : int  e.g. 12
+        choices   : list[int]  5 shuffled options including the correct answer
+    """
+    op = random.choice(CAPTCHA_OPERATORS)
+    lo, hi = CAPTCHA_NUM_RANGE
+    a = random.randint(lo, hi)
+    b = random.randint(lo, hi)
+
+    if op == "+":
+        answer = a + b
+    elif op == "-":
+        # Keep answer positive: ensure a >= b
+        if a < b:
+            a, b = b, a
+        answer = a - b
+    else:  # ×
+        # Keep numbers small for multiplication so it stays reasonable
+        a = random.randint(1, 9)
+        b = random.randint(1, 9)
+        answer = a * b
+
+    question = f"{a} {op} {b}"
+
+    # Build 4 unique wrong answers near the correct one
+    wrong = set()
+    attempts = 0
+    while len(wrong) < CAPTCHA_NUM_CHOICES - 1 and attempts < 100:
+        attempts += 1
+        delta = random.randint(1, 5) * random.choice([-1, 1])
+        candidate = answer + delta
+        if candidate != answer and candidate >= 0:
+            wrong.add(candidate)
+
+    choices = list(wrong)[:CAPTCHA_NUM_CHOICES - 1] + [answer]
+    random.shuffle(choices)
+
+    return {"question": question, "answer": answer, "choices": choices}
+
+
+def _captcha_keyboard(captcha: dict) -> InlineKeyboardMarkup:
+    """
+    Builds a keyboard with CAPTCHA_NUM_CHOICES answer buttons (in a row of 5)
+    plus a '🔄 New question' button below.
+    """
+    answer_buttons = [
+        InlineKeyboardButton(
+            str(c),
+            callback_data=f"{CAPTCHA_CB_PREFIX}{c}_{captcha['answer']}"
+        )
+        for c in captcha["choices"]
+    ]
+    return InlineKeyboardMarkup([
+        answer_buttons,
+        [InlineKeyboardButton("🔄 New question", callback_data=CAPTCHA_CB_RETRY)],
+    ])
+
+
+def _captcha_text(captcha: dict) -> str:
+    return (
+        "👋 <b>Welcome!</b>\n\n"
+        "🧠 <b>Solve this to prove you're human:</b>\n\n"
+        f"<blockquote>❓  <b>{captcha['question']} = ?</b></blockquote>\n\n"
+        "👇 Tap the correct answer below:"
+    )
+
+
 # ─── /start ref_XXXX HANDLING ───────────────────────────────────────────────
 
 async def handle_start_with_ref(update: Update, context: ContextTypes.DEFAULT_TYPE, ref_code: str) -> bool:
     """
     Called from start() when /start ref_XXXX is used. Creates the invite
-    record (first-touch only) and sends the CAPTCHA prompt.
+    record (first-touch only) and sends the math CAPTCHA prompt.
     Returns True if it fully handled the response (caller should return),
     False if there's nothing to do (e.g. invalid/self code) and normal
     /start flow should continue.
@@ -156,49 +245,96 @@ async def handle_start_with_ref(update: Update, context: ContextTypes.DEFAULT_TY
 
 # ─── CAPTCHA STAGE ──────────────────────────────────────────────────────────
 
-def _captcha_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🤖 I'm not a bot", callback_data="invite_captcha_pass")],
-    ])
-
-
 async def send_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send a fresh math CAPTCHA question via a new message."""
+    captcha = _generate_captcha()
+    # Store answer in bot_data keyed by user_id so we can validate the callback
+    user_id = update.effective_user.id
+    context.bot_data[f"captcha_{user_id}"] = captcha["answer"]
+
     await update.message.reply_text(
-        "👋 <b>Welcome!</b>\n\nBefore you continue, please confirm you're human:",
+        _captcha_text(captcha),
         parse_mode="HTML",
-        reply_markup=_captcha_keyboard(),
+        reply_markup=_captcha_keyboard(captcha),
     )
 
 
-async def handle_captcha_pass(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Callback handler for the CAPTCHA button."""
+async def _send_captcha_edit(query, context: ContextTypes.DEFAULT_TYPE, user_id: int) -> None:
+    """Send a fresh math CAPTCHA by editing the existing message (for retry/wrong answer)."""
+    captcha = _generate_captcha()
+    context.bot_data[f"captcha_{user_id}"] = captcha["answer"]
+
+    await query.message.edit_text(
+        _captcha_text(captcha),
+        parse_mode="HTML",
+        reply_markup=_captcha_keyboard(captcha),
+    )
+
+
+async def handle_captcha_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Callback handler for answer buttons:  captcha_ans_{chosen}_{correct}
+    Validates the answer. On correct → advances funnel.
+    On wrong → shows new question (retry).
+    """
     query = update.callback_query
     user_id = update.effective_user.id
-    await query.answer("✅ Verified!")
 
-    invite = await get_invite(user_id)
-    if invite and invite["stage"] == STAGE_SIGNED_UP:
-        await set_invite_stage(user_id, STAGE_AWAITING_JOIN)
-
+    # Parse callback: captcha_ans_{chosen}_{correct}
+    # Format: CAPTCHA_CB_PREFIX + chosen + "_" + correct
+    raw = query.data[len(CAPTCHA_CB_PREFIX):]          # e.g. "12_12" or "7_12"
+    parts = raw.split("_")
     try:
-        await query.message.delete()
-    except Exception:
-        pass
+        chosen  = int(parts[0])
+        correct = int(parts[1])
+    except (ValueError, IndexError):
+        await query.answer("❌ Invalid answer data.", show_alert=True)
+        return
 
-    # Continue into the normal membership-gate flow.
-    if not await membership_gate.check_membership(context, user_id):
-        await membership_gate.send_gate_message(update, context)
+    # Double-check against stored answer (tamper guard)
+    stored_answer = context.bot_data.get(f"captcha_{user_id}")
+
+    if chosen == correct and (stored_answer is None or chosen == stored_answer):
+        # ── CORRECT ──
+        await query.answer("✅ Correct!")
+        # Clean up stored answer
+        context.bot_data.pop(f"captcha_{user_id}", None)
+
+        invite = await get_invite(user_id)
+        if invite and invite["stage"] == STAGE_SIGNED_UP:
+            await set_invite_stage(user_id, STAGE_AWAITING_JOIN)
+
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+        # Continue into the normal membership-gate flow.
+        if not await membership_gate.check_membership(context, user_id):
+            await membership_gate.send_gate_message(update, context)
+        else:
+            # Already a member — advance straight to awaiting_interaction.
+            if invite:
+                await set_invite_stage(user_id, STAGE_AWAITING_INTERACTION)
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="<blockquote><b>👋 Welcome to CayShop Bot!</b></blockquote>\n"
+                     "I'm here to help you purchase subscriptions and digital "
+                     "services easily and securely.",
+                parse_mode="HTML",
+            )
     else:
-        # Already a member — advance straight to awaiting_interaction.
-        if invite:
-            await set_invite_stage(user_id, STAGE_AWAITING_INTERACTION)
-        await context.bot.send_message(
-            chat_id=query.message.chat_id,
-            text="<blockquote><b>👋 Welcome to CayShop Bot!</b></blockquote>\n"
-                 "I'm here to help you purchase subscriptions and digital "
-                 "services easily and securely.",
-            parse_mode="HTML",
-        )
+        # ── WRONG ──
+        await query.answer("❌ Wrong answer! Try a new question.", show_alert=True)
+        await _send_captcha_edit(query, context, user_id)
+
+
+async def handle_captcha_retry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback handler for the '🔄 New question' button."""
+    query = update.callback_query
+    user_id = update.effective_user.id
+    await query.answer("🔄 New question!")
+    await _send_captcha_edit(query, context, user_id)
 
 
 # ─── PROGRESSION HOOKS (call these from main.py's handlers) ─────────────────
@@ -208,7 +344,6 @@ async def advance_after_gate_pass(user_id: int, context: ContextTypes.DEFAULT_TY
     if invite and invite["stage"] == STAGE_AWAITING_JOIN:
         await set_invite_stage(user_id, STAGE_AWAITING_INTERACTION)
 
-        # ── Image 3: Notify the REFERRED USER after gate pass ──
         if context:
             referrer_id = invite["referrer_id"]
             referrer_user = await db.get_user(referrer_id)
@@ -224,6 +359,7 @@ async def advance_after_gate_pass(user_id: int, context: ContextTypes.DEFAULT_TY
                 )
             except Exception as e:
                 logger.warning(f"Failed to notify referred user {user_id}: {e}")
+
 
 async def mark_interaction_and_maybe_qualify(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> None:
     invite = await get_invite(user_id)
@@ -273,7 +409,6 @@ async def mark_interaction_and_maybe_qualify(context: ContextTypes.DEFAULT_TYPE,
         raw = await db.get_setting(f"invite_rewarded_batches:{referrer_id}")
         already_rewarded_batches = int(raw) if raw else 0
         total_earned = round(already_rewarded_batches * REWARD_USD, 2)
-        # ↓ removed the duplicate `remaining` calculation — reuse the one above
 
         try:
             await context.bot.send_message(
@@ -292,6 +427,7 @@ async def mark_interaction_and_maybe_qualify(context: ContextTypes.DEFAULT_TYPE,
 
     await _maybe_reward_referrer(context, referrer_id)
 
+
 async def _maybe_reward_referrer(context: ContextTypes.DEFAULT_TYPE, referrer_id: int) -> None:
     invites = await get_invites_for_referrer(referrer_id)
     qualified = [i for i in invites if i["stage"] == STAGE_QUALIFIED]
@@ -300,8 +436,7 @@ async def _maybe_reward_referrer(context: ContextTypes.DEFAULT_TYPE, referrer_id
     if qualified_count == 0 or qualified_count % QUALIFIED_PER_REWARD != 0:
         return
 
-    # Guard against double-rewarding the same batch: track how many
-    # reward batches have already been paid out via a settings key.
+    # Guard against double-rewarding the same batch.
     key = f"invite_rewarded_batches:{referrer_id}"
     raw = await db.get_setting(key)
     already_rewarded_batches = int(raw) if raw else 0

@@ -960,8 +960,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     data = query.data
     user_id = update.effective_user.id
 
-    if data == "invite_captcha_pass":
-        await invite_center.handle_captcha_pass(update, context)
+    if data.startswith(invite_center.CAPTCHA_CB_PREFIX):
+        await invite_center.handle_captcha_answer(update, context)
+        return
+
+    if data == invite_center.CAPTCHA_CB_RETRY:
+        await invite_center.handle_captcha_retry(update, context)
         return
 
     # ── Membership gate ──
