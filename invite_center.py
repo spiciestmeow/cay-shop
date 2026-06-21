@@ -260,7 +260,7 @@ async def mark_interaction_and_maybe_qualify(context: ContextTypes.DEFAULT_TYPE,
                 + (
                     f"<blockquote>🎉 <b>You earned a reward batch! ${REWARD_USD:.2f} added to your balance.</b></blockquote>"
                     if just_hit_batch else
-                    f"<blockquote><i>{remaining} invite(s) left to earn a reward.</i></blockquote>"
+                    f"<blockquote><b><i>{remaining} invite(s) left to earn a reward.</i></b></blockquote>"
                 )
             ),
             parse_mode="HTML",
@@ -279,11 +279,11 @@ async def mark_interaction_and_maybe_qualify(context: ContextTypes.DEFAULT_TYPE,
             await context.bot.send_message(
                 chat_id=CHANNEL_ID,
                 text=(
-                    f"🎁 <b>Active Referral!</b>\n\n"
+                    f"<blockquote>🎁 <b>Active Referral!</b>\n\n"
                     f"👤 <b>Referrer:</b> {referrer_name}\n"
                     f"🔗 <b>Active Referrals:</b> {qualified_count}\n"
                     f"💰 <b>Total earned from invites:</b> ${total_earned:.2f}\n"
-                    f"⏳ <b>{remaining} more to earn ${REWARD_USD:.2f}</b>"
+                    f"⏳ <b>{remaining}</b> more to earn <b>${REWARD_USD:.2f}</b></blockquote>"
                 ),
                 parse_mode="HTML",
             )
