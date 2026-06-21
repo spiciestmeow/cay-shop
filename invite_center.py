@@ -302,15 +302,15 @@ async def show_invite_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     total_earned = round(rewarded_batches * REWARD_USD, 2)
 
     text = (
-        "📊 <b>Your invite stats:</b>\n\n"
+        "<blockquote>📊 <b>Your invite stats:</b>\n\n"
         f"🔑 Total sign-ups: <b>{total}</b>\n"
         f"⏳ Awaiting join (group+channel): <b>{awaiting_join}</b>\n"
         f"🧩 Awaiting human verify: <b>{awaiting_human}</b>\n"
         f"🎮 Awaiting bot interaction: <b>{awaiting_inter}</b>\n"
         f"✅ Qualified for reward batch: <b>{qualified}</b>\n"
         f"🏅 Invites already rewarded: <b>{rewarded_batches * QUALIFIED_PER_REWARD}</b>\n\n"
-        f"💰 <b>Total balance earned:</b> ${total_earned:.2f}\n\n"
-        f"📌 <i>Every {QUALIFIED_PER_REWARD} qualified invites = ${REWARD_USD:.0f}.</i>"
+        f"💰 <b>Total balance earned:</b> ${total_earned:.2f}</blockquote>\n\n"
+        f"📌 <i><b>Every {QUALIFIED_PER_REWARD} qualified invites = ${REWARD_USD:.0f}.</b></i>"
     )
 
     await query.answer()
@@ -330,10 +330,10 @@ async def show_invite_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     await query.answer()
     await query.message.edit_text(
-        f"🔗 <b>Your exclusive invite link:</b>\n\n"
-        f"<code>{link}</code>\n\n"
-        f"Share this link with friends and earn ${REWARD_USD:.0f} for every "
-        f"{QUALIFIED_PER_REWARD} people who join and activate the bot! 🎉",
+        f"<blockquote>🔗 <b>Your exclusive invite link:</b></blockquote>"
+        f"<pre>{link}</pre>\n\n"
+        f"<i><b>Share this link with friends and earn ${REWARD_USD:.0f} for every "
+        f"{QUALIFIED_PER_REWARD} people who join and activate the bot! 🎉</b></i>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Back", callback_data="invite_back")],
