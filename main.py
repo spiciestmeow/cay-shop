@@ -280,7 +280,8 @@ def admin_main_keyboard():
         [InlineKeyboardButton("📂 Manage Categories",    callback_data="admin_categories")],
         [InlineKeyboardButton("📦 Manage Products",      callback_data="admin_products")],
         [InlineKeyboardButton("🎫 Generate Redeem Code", callback_data="admin_gen_redeem")],
-        [InlineKeyboardButton("⚙️ Bot Settings",         callback_data="admin_settings")],  # ← NEW
+        [InlineKeyboardButton("➕ Add Balance",          callback_data="admin_add_balance")],
+        [InlineKeyboardButton("⚙️ Bot Settings",         callback_data="admin_settings")],
         [InlineKeyboardButton("✕ Close", callback_data="close")],
     ])
 
@@ -510,7 +511,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if is_admin(user_id) and text not in MENU_BUTTONS:
         ud = await db.get_session(user_id)
         if ud.get("awaiting"):
-            await _process_admin_input(update, user_id, ud)
+            await _process_admin_input(update, context, user_id, ud)
             return
 
     if text == "🛒 Products":
@@ -581,7 +582,7 @@ async def handle_gcash_receipt(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # ─── ADMIN TEXT INPUT LOGIC ──────────────────────────────────────────────────
 
-async def _process_admin_input(update: Update, user_id: int, ud: dict) -> None:
+async def _process_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, ud: dict) -> None:
     """
     Process admin text input. `ud` is the session dict loaded from Supabase.
     Each branch must call db.set_session / db.clear_session after mutating `ud`.
@@ -812,6 +813,97 @@ async def _process_admin_input(update: Update, user_id: int, ud: dict) -> None:
             reply_markup=MAIN_MENU,
         )
  
+
+    elif awaiting == "add_balance_user_id":
+        try:
+            target_user_id = int(text.strip())
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Invalid ID. Please send a numeric Telegram user ID:"
+            )
+            return
+        target_user = await db.get_user(target_user_id)
+        if not target_user:
+            await update.message.reply_text(
+                "❌ No user found with that ID. Make sure they've started the bot at least once, then try again.\n\n"
+                "Send the user ID again, or /admin to cancel."
+            )
+            return
+        ud["add_balance_target"] = target_user_id
+        ud["awaiting"] = "add_balance_amount"
+        await db.set_session(user_id, ud)
+        await update.message.reply_text(
+            f"👤 User found: <b>{target_user.get('full_name', 'Unknown')}</b>\n"
+            f"💰 Current balance: <b>${float(target_user.get('balance', 0)):.2f}</b>\n\n"
+            f"Enter the <b>amount in USD</b> to add (e.g. <code>5.00</code>):",
+            parse_mode="HTML",
+        )
+
+    elif awaiting == "add_balance_amount":
+        try:
+            amount = float(text.strip())
+            if amount <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Invalid amount. Enter a positive number like <code>5.00</code>:",
+                parse_mode="HTML",
+            )
+            return
+        target_user_id = ud.pop("add_balance_target", None)
+        ud.pop("awaiting", None)
+        await db.set_session(user_id, ud)
+
+        if not target_user_id:
+            await update.message.reply_text("❌ Session expired. Please start again from the Admin Panel.")
+            return
+
+        await db.credit_balance_usd(
+            target_user_id, amount, description=f"Admin Panel credit by {user_id}"
+        )
+
+        await update.message.reply_text(
+            f"✅ <b>Balance added!</b>\n\n"
+            f"👤 User ID: <code>{target_user_id}</code>\n"
+            f"💰 Amount: <b>${amount:.2f}</b>",
+            parse_mode="HTML",
+            reply_markup=MAIN_MENU,
+        )
+
+        # Notify the user
+        try:
+            await context.bot.send_message(
+                chat_id=target_user_id,
+                text=(
+                    f"🤑 <b>New Credits Added!</b>\n\n"
+                    f"<blockquote>"
+                    f"👤 <b>User:</b> <code>{mask_user_id(target_user_id)}</code>\n"
+                    f"💵 <b>Amount:</b> ${amount:.2f}\n"
+                    f"💳 <b>Method:</b> Admin Panel ⚙️"
+                    f"</blockquote>"
+                ),
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify user {target_user_id}: {e}")
+
+        # Notify channel (masked amount, same style as redeem/GCash)
+        if CHANNEL_ID:
+            try:
+                await context.bot.send_message(
+                    chat_id=CHANNEL_ID,
+                    text=(
+                        f"🤑 <b>New Credits Added!</b>\n\n"
+                        f"<blockquote>"
+                        f"👤 <b>User:</b> <code>{mask_user_id(target_user_id)}</code>\n"
+                        f"💵 <b>Amount:</b> 🤑\n"
+                        f"💳 <b>Method:</b> Admin Panel ⚙️"
+                        f"</blockquote>"
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify channel: {e}")
 
     elif awaiting == "stock":
         try:
@@ -1471,6 +1563,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.answer()
         await query.message.reply_text(
             "🎫 Enter the <b>amount in USD</b> for this redeem code (e.g. <code>5.00</code>):",
+            parse_mode="HTML",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    if data == "admin_add_balance":
+        await db.set_session(user_id, {"awaiting": "add_balance_user_id"})
+        await query.answer()
+        await query.message.reply_text(
+            "➕ <b>Add Balance</b>\n\n"
+            "Enter the <b>Telegram user ID</b> of the customer:",
             parse_mode="HTML",
             reply_markup=ReplyKeyboardRemove(),
         )
