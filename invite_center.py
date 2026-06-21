@@ -202,29 +202,94 @@ async def handle_captcha_pass(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 # ─── PROGRESSION HOOKS (call these from main.py's handlers) ─────────────────
 
-async def advance_after_gate_pass(user_id: int) -> None:
-    """Call right after a referred user successfully passes the membership
-    gate (e.g. in the gate_check callback). Moves them from
-    awaiting_join -> awaiting_interaction."""
+async def advance_after_gate_pass(user_id: int, context: ContextTypes.DEFAULT_TYPE = None) -> None:
     invite = await get_invite(user_id)
     if invite and invite["stage"] == STAGE_AWAITING_JOIN:
         await set_invite_stage(user_id, STAGE_AWAITING_INTERACTION)
 
+        # ── Image 3: Notify the REFERRED USER after gate pass ──
+        if context:
+            referrer_id = invite["referrer_id"]
+            referrer_user = await db.get_user(referrer_id)
+            referrer_name = (referrer_user or {}).get("full_name", "someone") if referrer_user else "someone"
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        f"👋 <b>Welcome! You joined through {referrer_name}'s invitation.</b>\n"
+                        f"Thanks for joining! Enjoy the service. 🎉"
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception as e:
+                logger.warning(f"Failed to notify referred user {user_id}: {e}")
 
 async def mark_interaction_and_maybe_qualify(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> None:
-    """
-    Call on any successful message/button interaction from a user who has
-    already passed the membership gate. If they're an invited user sitting
-    at awaiting_interaction, this qualifies them and checks for a reward.
-    Safe to call on every interaction — it's a no-op once already qualified.
-    """
     invite = await get_invite(user_id)
     if not invite or invite["stage"] != STAGE_AWAITING_INTERACTION:
         return
 
     await set_invite_stage(user_id, STAGE_QUALIFIED)
-    await _maybe_reward_referrer(context, invite["referrer_id"])
 
+    referrer_id = invite["referrer_id"]
+
+    # ── Fetch referrer info for display ──
+    referrer_user = await db.get_user(referrer_id)
+    referrer_name = (referrer_user or {}).get("full_name", "Someone") if referrer_user else "Someone"
+
+    # ── Fetch referred user info ──
+    referred_user = await db.get_user(user_id)
+    referred_name = (referred_user or {}).get("full_name", "User") if referred_user else "User"
+
+    # ── Count this referrer's qualified invites ──
+    invites = await get_invites_for_referrer(referrer_id)
+    qualified_count = sum(1 for i in invites if i["stage"] == STAGE_QUALIFIED)
+    mod = qualified_count % QUALIFIED_PER_REWARD
+    just_hit_batch = mod == 0  # True right when they cross a reward threshold
+    remaining = 0 if just_hit_batch else (QUALIFIED_PER_REWARD - mod)
+
+    # ── Image 2: Notify REFERRER ──
+    try:
+        await context.bot.send_message(
+            chat_id=referrer_id,
+            text=(
+                f"✅ <b>Your invitation for {referred_name} was counted successfully!</b>\n"
+                f"📊 Your successful invites: <b>{qualified_count}/{QUALIFIED_PER_REWARD}</b>\n\n"
+                + (
+                    f"🎉 <b>You earned a reward batch! ${REWARD_USD:.2f} added to your balance.</b>"
+                    if just_hit_batch else
+                    f"<i>{remaining} invite(s) left to earn a reward.</i>"
+                )
+            ),
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.warning(f"Failed to notify referrer {referrer_id} of new invite: {e}")
+
+    # ── Image 1: Notify CHANNEL ──
+    import os
+    CHANNEL_ID = os.environ.get("CHANNEL_ID", "")
+    if CHANNEL_ID:
+        raw = await db.get_setting(f"invite_rewarded_batches:{referrer_id}")
+        already_rewarded_batches = int(raw) if raw else 0
+        total_earned = round(already_rewarded_batches * REWARD_USD, 2)
+
+        try:
+            await context.bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=(
+                    f"🎁 <b>Active Referral!</b>\n\n"
+                    f"👤 <b>Referrer:</b> {referrer_name}\n"
+                    f"🔗 <b>Active Referrals:</b> {qualified_count}\n"
+                    f"💰 <b>Total earned from invites:</b> ${total_earned:.2f}\n"
+                    f"⏳ <b>{remaining} more to earn ${REWARD_USD:.2f}</b>"
+                ),
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send referral channel notification: {e}")
+
+    await _maybe_reward_referrer(context, referrer_id)
 
 async def _maybe_reward_referrer(context: ContextTypes.DEFAULT_TYPE, referrer_id: int) -> None:
     invites = await get_invites_for_referrer(referrer_id)
