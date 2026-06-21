@@ -982,9 +982,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if data == "invite_stats":
         await invite_center.show_invite_stats(update, context)
         return
+    
     if data == "invite_link":
         await invite_center.show_invite_link(update, context)
         return
+    
     if data == "invite_back":
         await invite_center.show_invite_back(update, context)
         return
