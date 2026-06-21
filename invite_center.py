@@ -216,7 +216,7 @@ async def advance_after_gate_pass(user_id: int, context: ContextTypes.DEFAULT_TY
                 await context.bot.send_message(
                     chat_id=user_id,
                     text=(
-                        f"👋 <b>Welcome! You joined through {referrer_name}'s invitation.</b>\n"
+                        f"👋 Welcome! You joined through {referrer_name}'s invitation.\n"
                         f"Thanks for joining! Enjoy the service. 🎉"
                     ),
                     parse_mode="HTML",

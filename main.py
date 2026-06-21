@@ -969,11 +969,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await membership_gate.handle_gate_check(update, context)
         if await membership_gate.check_membership(context, user_id, use_cache=False):
             await invite_center.advance_after_gate_pass(user_id, context)
+            await invite_center.mark_interaction_and_maybe_qualify(context, user_id)
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
                 text="<blockquote><b>👋 Welcome to CayShop Bot!</b></blockquote>\n"
-                     "I'm here to help you purchase subscriptions and digital "
-                     "services easily and securely.",
+                    "I'm here to help you purchase subscriptions and digital "
+                    "services easily and securely.",
                 parse_mode="HTML",
                 reply_markup=MAIN_MENU,
             )
