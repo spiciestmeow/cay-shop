@@ -138,6 +138,11 @@ async def handle_gate_check(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await query.message.delete()
         except Exception:
             pass
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="✅ <b>Verified successfully. Welcome!</b>",
+            parse_mode="HTML",
+        )
         # Caller's main.py should show the main menu right after this —
         # see main_after_gate() below, called from the handler in main.py.
     else:
