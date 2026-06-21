@@ -38,7 +38,8 @@ from telegram.ext import ContextTypes
 
 import db
 import membership_gate
-
+import os
+CHANNEL_ID = os.environ.get("CHANNEL_ID", "-1004441073113") 
 logger = logging.getLogger(__name__)
 
 # ─── CONFIG ─────────────────────────────────────────────────────────────────
@@ -244,21 +245,22 @@ async def mark_interaction_and_maybe_qualify(context: ContextTypes.DEFAULT_TYPE,
     # ── Count this referrer's qualified invites ──
     invites = await get_invites_for_referrer(referrer_id)
     qualified_count = sum(1 for i in invites if i["stage"] == STAGE_QUALIFIED)
+
     mod = qualified_count % QUALIFIED_PER_REWARD
     just_hit_batch = mod == 0
     remaining = 0 if just_hit_batch else (QUALIFIED_PER_REWARD - mod)
 
-    # ── Image 2: Notify REFERRER ──
+    # ── Notify REFERRER ──
     try:
         await context.bot.send_message(
             chat_id=referrer_id,
             text=(
-                f"✅ <b>Your invitation for {referred_name} was counted successfully!</b>\n"
-                f"📊 Your successful invites: <b>{qualified_count}/{QUALIFIED_PER_REWARD}</b>\n\n"
+                f"<blockquote>✅ <b>Your invitation for {referred_name} was counted successfully!\n"
+                f"📊 Your successful invites: {qualified_count}/{QUALIFIED_PER_REWARD}</b></blockquote>\n\n"
                 + (
-                    f"🎉 <b>You earned a reward batch! ${REWARD_USD:.2f} added to your balance.</b>"
+                    f"<blockquote>🎉 <b>You earned a reward batch! ${REWARD_USD:.2f} added to your balance.</b></blockquote>"
                     if just_hit_batch else
-                    f"<i>{remaining} invite(s) left to earn a reward.</i>"
+                    f"<blockquote><i>{remaining} invite(s) left to earn a reward.</i></blockquote>"
                 )
             ),
             parse_mode="HTML",
@@ -266,16 +268,12 @@ async def mark_interaction_and_maybe_qualify(context: ContextTypes.DEFAULT_TYPE,
     except Exception as e:
         logger.warning(f"Failed to notify referrer {referrer_id} of new invite: {e}")
 
-    # ── Image 1: Notify CHANNEL ──
-    import os
-    CHANNEL_ID = os.environ.get("CHANNEL_ID", "")
+    # ── Notify CHANNEL ──
     if CHANNEL_ID:
         raw = await db.get_setting(f"invite_rewarded_batches:{referrer_id}")
         already_rewarded_batches = int(raw) if raw else 0
         total_earned = round(already_rewarded_batches * REWARD_USD, 2)
-        remaining = QUALIFIED_PER_REWARD - (qualified_count % QUALIFIED_PER_REWARD)
-        if remaining == QUALIFIED_PER_REWARD:
-            remaining = 0
+        # ↓ removed the duplicate `remaining` calculation — reuse the one above
 
         try:
             await context.bot.send_message(
