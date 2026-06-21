@@ -547,6 +547,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
     elif text == "🎁 Invite Center":
+        if not is_admin(user_id):
+            await update.message.reply_text(
+                "⛔ The Invite Center is not available yet.",
+                reply_markup=MAIN_MENU,
+            )
+            return
         await invite_center.show_invite_center(update, context)
 
     elif text == "💰 Top up balance":
