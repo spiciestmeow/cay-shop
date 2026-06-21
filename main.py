@@ -1693,17 +1693,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await db.credit_balance(target_user_id, amount_php)
         await query.answer("✅ Balance credited!", show_alert=True)
 
-        # Rebuild caption with updated status line, remove all buttons
+        # Get existing plain-text caption and replace the status line
         try:
             original = query.message.caption or ""
+            # Replace the plain text status line (no HTML tags in caption property)
             updated_caption = original.replace(
-                "🟡 <b>Status: PENDING VERIFICATION</b>",
-                "🟢 <b>Status: APPROVED ✅</b>"
+                "Status: PENDING VERIFICATION",
+                "Status: ✅ APPROVED"
             )
             await query.message.edit_caption(
                 caption=updated_caption,
-                parse_mode="HTML",
-                reply_markup=None,  # removes all buttons
+                parse_mode=None,  # ← plain text, no HTML since caption is already plain
+                reply_markup=None,
             )
         except Exception as e:
             logger.warning(f"Could not edit admin message: {e}")
@@ -1752,13 +1753,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         try:
             original = query.message.caption or ""
             updated_caption = original.replace(
-                "🟡 <b>Status: PENDING VERIFICATION</b>",
-                "🔴 <b>Status: REJECTED ❌</b>"
+                "Status: PENDING VERIFICATION",
+                "Status: ❌ REJECTED"
             )
             await query.message.edit_caption(
                 caption=updated_caption,
-                parse_mode="HTML",
-                reply_markup=None,  # removes all buttons
+                parse_mode=None,  # ← plain text
+                reply_markup=None,
             )
         except Exception as e:
             logger.warning(f"Could not edit admin message: {e}")
