@@ -245,7 +245,7 @@ async def mark_interaction_and_maybe_qualify(context: ContextTypes.DEFAULT_TYPE,
     invites = await get_invites_for_referrer(referrer_id)
     qualified_count = sum(1 for i in invites if i["stage"] == STAGE_QUALIFIED)
     mod = qualified_count % QUALIFIED_PER_REWARD
-    just_hit_batch = mod == 0  # True right when they cross a reward threshold
+    just_hit_batch = mod == 0
     remaining = 0 if just_hit_batch else (QUALIFIED_PER_REWARD - mod)
 
     # ── Image 2: Notify REFERRER ──
@@ -273,6 +273,9 @@ async def mark_interaction_and_maybe_qualify(context: ContextTypes.DEFAULT_TYPE,
         raw = await db.get_setting(f"invite_rewarded_batches:{referrer_id}")
         already_rewarded_batches = int(raw) if raw else 0
         total_earned = round(already_rewarded_batches * REWARD_USD, 2)
+        remaining = QUALIFIED_PER_REWARD - (qualified_count % QUALIFIED_PER_REWARD)
+        if remaining == QUALIFIED_PER_REWARD:
+            remaining = 0
 
         try:
             await context.bot.send_message(
