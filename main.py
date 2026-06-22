@@ -3,6 +3,7 @@ import asyncio
 import official_subscriptions
 import membership_gate
 import invite_center
+import lang
 import logging
 from datetime import datetime
 from telegram import (
@@ -412,6 +413,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             db._client().table(db.USERS_TABLE).update(updates).eq("user_id", tg_user.id).execute()
             logger.info(f"Updated profile for user {tg_user.id}: {updates}")
 
+    # Show language picker the very first time
+    if not context.user_data.get("lang"):
+        await update.message.reply_text(
+            "🌐 Please choose your language / Piliin ang iyong wika:",
+            reply_markup=lang.LANG_PICKER_KEYBOARD,
+        )
+        return
+
     args = context.args  # python-telegram-bot populates this from
                         # "/start ref_XXXX"
     if args and args[0].startswith("ref_"):
@@ -430,22 +439,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         ud.pop("awaiting", None)
         ud.pop("gcash_pending", None)
         await db.set_session(tg_user.id, ud)
+
+    user_lang = lang.get_lang(context)
+    welcome_text = await lang.t("welcome", user_lang)
     await update.message.reply_text(
-        "<blockquote><b>👋 Welcome to CayShop Bot!</b></blockquote>\nI'm here to help you purchase subscriptions and digital services easily and securely.",
+        welcome_text,
         parse_mode="HTML",
-        reply_markup=MAIN_MENU,
+        reply_markup=lang.build_main_menu(user_lang),
     )
 
 
 async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "👋 أهلاً بك في ToolAI Bot\nالرجاء اختيار لغتك المفضلة / Please select your preferred language:",
-        reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("🇸🇦 Arabic عربي", callback_data="lang_ar"),
-                InlineKeyboardButton("🇺🇸 English", callback_data="lang_en"),
-            ]
-        ]),
+        "🌐 Please choose your language / Piliin ang iyong wika:",
+        reply_markup=lang.LANG_PICKER_KEYBOARD,
     )
 
 
@@ -474,6 +481,8 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = update.message.text
+    canonical = lang.normalize_menu(text)
+    user_lang = lang.get_lang(context)  
     user_id = update.effective_user.id
 
     if not await membership_gate.check_membership(context, user_id):
@@ -551,17 +560,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 pass
         return
 
-    if is_admin(user_id) and text not in MENU_BUTTONS:
+    if is_admin(user_id) and canonical not in MENU_BUTTONS:
         ud = await db.get_session(user_id)
         if ud.get("awaiting"):
             await _process_admin_input(update, context, user_id, ud)
             return
 
-    if text == "🛒 Products":
+    if canonical == "🛒 Products":
         kb = await build_products_keyboard()
         await update.message.reply_text("<b>Choose a service:</b>", parse_mode="HTML", reply_markup=kb)
 
-    elif text == "👤 Profile":
+    elif canonical == "👤 Profile":
         db_user = await db.get_user(update.effective_user.id)
         await update.message.reply_text(
             build_profile_text(update.effective_user, db_user),
@@ -569,17 +578,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             reply_markup=PROFILE_KEYBOARD,
         )
 
-    elif text == "🎁 Invite Center":
+    elif canonical == "🎁 Invite Center":
         await invite_center.show_invite_center(update, context)
 
-    elif text == "💰 Top up balance":
+    elif canonical == "💰 Top up balance":
             await update.message.reply_text(
                 PAYMENT_METHODS_TEXT,
                 parse_mode="HTML",
                 reply_markup=build_payment_methods_keyboard(),
             )
 
-    elif text == "🎫 Redeem Code":
+    elif canonical == "🎫 Redeem Code":
         await db.set_session(user_id, {"awaiting": "redeem_code"})
         await update.message.reply_text(
             "🎫 Please send your redeem code:",
@@ -589,7 +598,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             ]),
         )
 
-    elif text == "📋 Bot Policy":
+    elif canonical == "📋 Bot Policy":
         policy_text = await get_bot_policy()
         await update.message.reply_text(
             policy_text,
@@ -599,9 +608,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             ]),
         )
 
-    elif text == "❓ Help":
+    elif canonical == "❓ Help":
+        help_text = await lang.t("help_text", user_lang)
         await update.message.reply_text(
-            HELP_TEXT,
+            help_text,
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✕ Close", callback_data="close")]
@@ -1083,6 +1093,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
+    if data == "lang_en":
+        context.user_data["lang"] = "en"
+        await query.answer("Language set to English ✅")
+        await query.message.edit_text("✅ English selected.", reply_markup=lang.LANG_PICKER_KEYBOARD)
+        return
+
+    if data == "lang_tl":
+        context.user_data["lang"] = "tl"
+        await query.answer("Wika itinakda sa Tagalog ✅")
+        await query.message.edit_text("✅ Tagalog napili.", reply_markup=lang.LANG_PICKER_KEYBOARD)
+        return
+
     if not await membership_gate.check_membership(context, user_id):
         await membership_gate.send_gate_message(update, context)
         return
@@ -1252,21 +1274,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 [InlineKeyboardButton("🛒 Regular Product",        callback_data="admin_cattype_regular")],
                 [InlineKeyboardButton("✅ Official Subscription",  callback_data="admin_cattype_official")],
             ]),
-        )
-        return
-
-    # ── Language ──
-    if data == "lang_ar":
-        await query.answer()
-        await query.message.edit_text(
-            "✅ تم اختيار اللغة العربية\n\nاللغة العربية غير متاحة حالياً، سيتم إضافتها قريباً."
-        )
-        return
-
-    if data == "lang_en":
-        await query.answer()
-        await query.message.edit_text(
-            "✅ English language selected.\n\nYou are now using the bot in English."
         )
         return
 
