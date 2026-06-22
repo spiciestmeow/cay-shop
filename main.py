@@ -5,6 +5,8 @@ import membership_gate
 import invite_center
 import lang
 import logging
+import ban_manager
+import pending_gcash
 from datetime import datetime
 from telegram import (
     Update,
@@ -295,6 +297,8 @@ def admin_main_keyboard():
         [InlineKeyboardButton("➕ Add Balance",          callback_data="admin_add_balance")],
         [InlineKeyboardButton("⚙️ Bot Settings",         callback_data="admin_settings")],
         [InlineKeyboardButton("📋 Edit Bot Policy",       callback_data="admin_edit_policy")],
+        [InlineKeyboardButton("🚫 Ban / Unban User",      callback_data="ban_start")],
+        [InlineKeyboardButton("💳 Pending GCash",          callback_data="pending_gcash_list")],
         [InlineKeyboardButton("✕ Close", callback_data="close")],
     ])
 
@@ -324,8 +328,12 @@ async def admin_products_pick_cat_keyboard() -> InlineKeyboardMarkup:
     cats = await db.get_categories()
     rows = []
     for cat in cats:
+        products = await db.get_products(cat["id"])
+        total = len(products)
+        in_stock = sum(1 for p in products if p["stock"] > 0)
+        stock_icon = "✅" if in_stock > 0 else "❌"
         rows.append([InlineKeyboardButton(
-            f"{cat['emoji']} {cat['name']}",
+            f"{cat['emoji']} {cat['name']}  {stock_icon} {in_stock}/{total}",
             callback_data=f"admin_prodcat_{cat['id']}"
         )])
     rows.append([InlineKeyboardButton("⬅️ Back", callback_data="admin_main")])
@@ -488,6 +496,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if not await membership_gate.check_membership(context, user_id):
         await membership_gate.send_gate_message(update, context)
+        return
+
+    if await ban_manager.is_user_banned(user_id):
+        await update.message.reply_text(ban_manager.BANNED_MESSAGE, parse_mode="HTML")
         return
 
     await invite_center.mark_interaction_and_maybe_qualify(context, user_id)
@@ -667,6 +679,10 @@ async def _process_admin_input(update: Update, context: ContextTypes.DEFAULT_TYP
             parse_mode="HTML",
             reply_markup=build_emoji_picker(),
         )
+
+    elif awaiting == "ban_user_id":
+        await ban_manager.handle_ban_input(update, context, ud)
+        return
 
     elif awaiting == "edit_cat_name":
         cat_id = ud.pop("edit_cat_id", None)
@@ -1047,10 +1063,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     data = query.data
     user_id = update.effective_user.id
 
-    # ── ADD THESE 3 LINES ──────────────────────────────────
+    if await ban_manager.route_callback(update, context):
+        return
+
+    if await pending_gcash.route_callback(update, context):
+        return
+
     if await official_subscriptions.route_callback(update, context):
         return
-    # ───────────────────────────────────────────────────────
 
     if data.startswith(invite_center.CAPTCHA_CB_PREFIX):
         await invite_center.handle_captcha_answer(update, context)
@@ -1074,6 +1094,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 parse_mode="HTML",
                 reply_markup=MAIN_MENU,
             )
+        return
+
+    if await ban_manager.is_user_banned(user_id):
+        await query.answer("🚫 Your account has been suspended.", show_alert=True)
         return
 
     if data in ("admin_cattype_regular", "admin_cattype_official"):
