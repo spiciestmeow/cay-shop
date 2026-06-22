@@ -416,7 +416,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Show language picker the very first time
     if not context.user_data.get("lang"):
         await update.message.reply_text(
-            "🌐 Please choose your language / Piliin ang iyong wika:",
+            "🌐 Please choose your language:",
             reply_markup=lang.LANG_PICKER_KEYBOARD,
         )
         return
@@ -451,7 +451,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "🌐 Please choose your language / Piliin ang iyong wika:",
+        "🌐 Please choose your language:",
         reply_markup=lang.LANG_PICKER_KEYBOARD,
     )
 
