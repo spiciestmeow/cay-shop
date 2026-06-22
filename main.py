@@ -224,10 +224,11 @@ async def build_products_keyboard() -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton("✅ Official Subscriptions", callback_data="official_subs")]]
     pairs = []
     for cat in categories:
-        pairs.append(InlineKeyboardButton(
-            f"{cat['emoji']} {cat['name']}",
-            callback_data=f"cat_{cat['id']}"
-        ))
+        if cat.get("type", "regular") == "regular":
+            pairs.append(InlineKeyboardButton(
+                f"{cat['emoji']} {cat['name']}",
+                callback_data=f"cat_{cat['id']}"
+            ))
     for i in range(0, len(pairs), 2):
         rows.append(pairs[i:i + 2])
     rows.append([InlineKeyboardButton("🟢 What's Available", callback_data="whats_available")])
@@ -381,8 +382,9 @@ def admin_prod_edit_keyboard(prod_id: int, cat_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("🎮 Demo URL",     callback_data=f"admin_editprod_demo_{prod_id}"),
         ],
         [
-            InlineKeyboardButton("🔗 Delivery URL", callback_data=f"admin_editprod_deliveryurl_{prod_id}"),  # ← new
+            InlineKeyboardButton("🔗 Delivery URL", callback_data=f"admin_editprod_deliveryurl_{prod_id}"),
         ],
+        [InlineKeyboardButton("🔗 Bot Link", callback_data=f"admin_editprod_botlink_{prod_id}")],
         [InlineKeyboardButton("🗑 Delete Product",  callback_data=f"admin_delprod_{prod_id}")],
         [InlineKeyboardButton("⬅️ Back",            callback_data=f"admin_prodcat_{cat_id}")],
     ])
@@ -1050,6 +1052,37 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
         return
 
+    if data in ("admin_cattype_regular", "admin_cattype_official"):
+        if not is_admin(user_id):
+            await query.answer("⛔ Admins only.", show_alert=True)
+            return
+        ud = await db.get_session(user_id)
+        name  = ud.get("new_cat_name")
+        emoji = ud.get("new_cat_emoji")
+        if not name or not emoji:
+            await query.answer("Session expired — please start /admin again.", show_alert=True)
+            return
+        cat_type = "official" if data == "admin_cattype_official" else "regular"
+        try:
+            await db.add_category(name, emoji, type=cat_type)
+        except Exception as e:
+            logger.error(f"Failed to add category: {e}", exc_info=e)
+            await query.answer("❌ Failed to save category. Please try again.", show_alert=True)
+            return
+        ud.pop("new_cat_name", None)
+        ud.pop("new_cat_emoji", None)
+        ud.pop("awaiting", None)
+        await db.set_session(user_id, ud)
+        kb = await admin_categories_keyboard()
+        label = "Official Subscription" if cat_type == "official" else "Regular Product"
+        await query.answer(f"✅ Category added!")
+        await query.message.edit_text(
+            f"✅ Category <b>{emoji} {name}</b> added as <b>{label}</b>!\n\n📂 <b>Categories</b>:",
+            parse_mode="HTML",
+            reply_markup=kb,
+        )
+        return
+
     if not await membership_gate.check_membership(context, user_id):
         await membership_gate.send_gate_message(update, context)
         return
@@ -1207,24 +1240,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.message.delete()
             return
 
-        try:
-            await db.add_category(name, emoji)
-        except Exception as e:
-            logger.error(f"Failed to add category: {e}", exc_info=e)
-            await query.answer("❌ Failed to save category. Please try again.", show_alert=True)
-            return
-
-        # Success — now clear the state
-        ud.pop("new_cat_name", None)
-        ud.pop("awaiting", None)
+        # Save emoji to session, then ask for category type
+        ud["new_cat_emoji"] = emoji
         await db.set_session(user_id, ud)
 
-        kb = await admin_categories_keyboard()
-        await query.answer(f"✅ Category '{emoji} {name}' added!")
+        await query.answer()
         await query.message.edit_text(
-            f"✅ Category <b>{emoji} {name}</b> added!\n\n📂 <b>Categories</b>:",
+            f"📂 Category: <b>{emoji} {name}</b>\n\nWhat type is this category?",
             parse_mode="HTML",
-            reply_markup=kb,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🛒 Regular Product",        callback_data="admin_cattype_regular")],
+                [InlineKeyboardButton("✅ Official Subscription",  callback_data="admin_cattype_official")],
+            ]),
         )
         return
 

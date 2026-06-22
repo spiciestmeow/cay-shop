@@ -273,9 +273,7 @@ async def handle_official_subs(
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "✅ <b>Official Subscriptions</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "Choose a subscription to see its description and open the bot:",
+        "📋 Choose a product:",
         parse_mode="HTML",
         reply_markup=build_official_subs_list_keyboard(),
     )
