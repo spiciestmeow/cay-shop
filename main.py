@@ -1,5 +1,6 @@
 import os
 import asyncio
+import official_subscriptions
 import membership_gate
 import invite_center
 import logging
