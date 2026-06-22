@@ -166,9 +166,9 @@ STRINGS: dict[str, str] = {
 
     # Welcome
     "welcome": (
-        "👋 <b>Welcome to CayShop!</b>\n\n"
-        "Browse products, top up your balance, and manage your account — all from here.\n\n"
-        "Use the menu below to get started."
+        "<blockquote><b>👋 Welcome to CayShop Bot!</b></blockquote>\n"
+        "I'm here to help you purchase subscriptions and digital "
+        "services easily and securely."
     ),
 
     # Help
