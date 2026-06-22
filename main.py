@@ -1472,7 +1472,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 f"{cat_emoji} <b>{cat_name}</b>\n\n🚫 No products available in this category yet.",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("⬅️ Services", callback_data="back_to_products")]
+                    [InlineKeyboardButton("⬅️ Back to services", callback_data="back_to_products")]
                 ]),
             )
             return
@@ -1480,7 +1480,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             [InlineKeyboardButton(f"{cat_emoji} {p['name']}", callback_data=f"user_prod_{p['id']}")]
             for p in products
         ]
-        product_buttons.append([InlineKeyboardButton("⬅️ Services", callback_data="back_to_products")])
+        product_buttons.append([InlineKeyboardButton("⬅️ Back to services", callback_data="back_to_products")])
         await query.answer()
         await query.message.edit_text(
             f"{cat_emoji} Choose your <b>{cat_name}</b> plan:",

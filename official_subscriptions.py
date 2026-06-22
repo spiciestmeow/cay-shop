@@ -48,6 +48,6 @@ async def handle_official_subs(
         "Check back soon!",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Back to services", callback_data="services")]
+            [InlineKeyboardButton("⬅️ Back to services", callback_data="back_to_products")]
         ]),
     )
