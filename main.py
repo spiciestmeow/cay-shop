@@ -1021,6 +1021,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     data = query.data
     user_id = update.effective_user.id
 
+    # ── ADD THESE 3 LINES ──────────────────────────────────
+    if await official_subscriptions.route_callback(update, context):
+        return
+    # ───────────────────────────────────────────────────────
+
     if data.startswith(invite_center.CAPTCHA_CB_PREFIX):
         await invite_center.handle_captcha_answer(update, context)
         return
