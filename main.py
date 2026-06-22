@@ -220,7 +220,7 @@ def build_payment_methods_keyboard() -> InlineKeyboardMarkup:
 
 async def build_products_keyboard() -> InlineKeyboardMarkup:
     categories = await db.get_categories()
-    rows = [[InlineKeyboardButton("✅ Official Subscriptions", callback_data="noop")]]
+    rows = [[InlineKeyboardButton("✅ Official Subscriptions", callback_data="official_subs")]]
     pairs = []
     for cat in categories:
         pairs.append(InlineKeyboardButton(
@@ -2078,6 +2078,9 @@ def main() -> None:
     app.add_handler(CommandHandler("contactadmin", contactadmin_command))
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(CallbackQueryHandler(official_subscriptions.handle_official_subs, pattern="^official_subs$"))
+    app.add_handler(CallbackQueryHandler(official_subscriptions.handle_bot_detail, pattern="^osub_detail_"))
+    app.add_handler(CallbackQueryHandler(official_subscriptions.handle_subscribe, pattern="^osub_buy_"))
     app.add_handler(MessageHandler(
         filters.PHOTO & ~filters.COMMAND,
         handle_gcash_receipt,
