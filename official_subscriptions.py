@@ -3,29 +3,44 @@ official_subscriptions.py
 ─────────────────────────
 Handles the ✅ Official Subscriptions section of the bot.
 
-HOW TO WIRE INTO main.py
+HOW TO WIRE INTO main.py  ← READ THIS OR IT WON'T WORK
+────────────────────────────────────────────────────────
+The easiest, safest way is to call route_callback() at the TOP of your
+existing handle_callback function, before any other if/elif blocks:
+
+    async def handle_callback(update, context):
+        query = update.callback_query
+        user_id = query.from_user.id
+        data = query.data
+
+        # ── Official Subscriptions (must be first) ──
+        if await official_subscriptions.route_callback(update, context):
+            return
+
+        # ... rest of your existing handler ...
+        if data == "close":
+            ...
+
+WHY this is needed
+──────────────────
+In python-telegram-bot, handlers are checked in registration order.
+Your app registers:
+    app.add_handler(CallbackQueryHandler(handle_callback))   ← no pattern → catches ALL
+    app.add_handler(CallbackQueryHandler(..., pattern="^official_subs$"))  ← never reached
+
+The catch-all fires first, so the specific handlers below it are never called.
+route_callback() solves this without touching your handler registration order.
+
+ALTERNATIVE (also works)
 ────────────────────────
-1.  Import at the top of main.py:
-        import official_subscriptions
+Move the 3 specific handlers BEFORE the catch-all in main():
 
-2.  Change the "Official Subscriptions" button callback_data from "noop" to
-    "official_subs":
-        InlineKeyboardButton("✅ Official Subscriptions",
-                             callback_data="official_subs")
-
-3.  Register the handlers inside your `main()` / ApplicationBuilder block:
-        app.add_handler(CallbackQueryHandler(
-            official_subscriptions.handle_official_subs,
-            pattern="^official_subs$"
-        ))
-        app.add_handler(CallbackQueryHandler(
-            official_subscriptions.handle_bot_detail,
-            pattern="^osub_detail_"
-        ))
-        app.add_handler(CallbackQueryHandler(
-            official_subscriptions.handle_subscribe,
-            pattern="^osub_buy_"
-        ))
+    # specific patterns first:
+    app.add_handler(CallbackQueryHandler(official_subscriptions.handle_official_subs, pattern="^official_subs$"))
+    app.add_handler(CallbackQueryHandler(official_subscriptions.handle_bot_detail, pattern="^osub_detail_"))
+    app.add_handler(CallbackQueryHandler(official_subscriptions.handle_subscribe, pattern="^osub_buy_"))
+    # catch-all last:
+    app.add_handler(CallbackQueryHandler(handle_callback))
 """
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -33,11 +48,10 @@ from telegram.ext import ContextTypes
 
 # ─── OFFICIAL SUBSCRIPTION BOTS ──────────────────────────────────────────────
 #
-# Fill in:
-#   • "bot_link"  → the t.me/… URL users should be redirected to
-#   • "price"     → displayed price (string, e.g. "$15/mo" or "$99/yr")
-#   • "duration"  → subscription length shown on the detail card
-#   • "description" → shown on the detail card before the Open button
+# Edit each entry:
+#   • "bot_link"    → real t.me/… URL to open the bot
+#   • "price"       → price shown on the detail card
+#   • "description" → shown before the Open Bot button
 #
 OFFICIAL_BOTS = [
     {
@@ -53,7 +67,7 @@ OFFICIAL_BOTS = [
             "✅ Web browsing, code execution & file handling\n"
             "✅ 12-month access, all Pro features included"
         ),
-        "bot_link": "https://t.me/ManusBot",  # ← replace with real link
+        "bot_link": "https://t.me/ManusBot",
     },
     {
         "id": "cursor",
@@ -68,7 +82,7 @@ OFFICIAL_BOTS = [
             "✅ Unlimited AI completions\n"
             "✅ Codebase-aware chat & edits"
         ),
-        "bot_link": "https://t.me/CursorBot",  # ← replace with real link
+        "bot_link": "https://t.me/CursorBot",
     },
     {
         "id": "chatprd",
@@ -83,7 +97,7 @@ OFFICIAL_BOTS = [
             "✅ Product strategy coaching\n"
             "✅ Integrated with Notion, Jira & Linear"
         ),
-        "bot_link": "https://t.me/ChatPRDBot",  # ← replace with real link
+        "bot_link": "https://t.me/ChatPRDBot",
     },
     {
         "id": "replit",
@@ -98,7 +112,7 @@ OFFICIAL_BOTS = [
             "✅ Always-on repls & deployments\n"
             "✅ Extra compute & storage"
         ),
-        "bot_link": "https://t.me/ReplitBot",  # ← replace with real link
+        "bot_link": "https://t.me/ReplitBot",
     },
     {
         "id": "factory",
@@ -113,7 +127,7 @@ OFFICIAL_BOTS = [
             "✅ AI-powered refactoring\n"
             "✅ GitHub & GitLab integration"
         ),
-        "bot_link": "https://t.me/FactoryBot",  # ← replace with real link
+        "bot_link": "https://t.me/FactoryBot",
     },
     {
         "id": "framer",
@@ -128,7 +142,7 @@ OFFICIAL_BOTS = [
             "✅ Custom domain & SEO tools\n"
             "✅ CMS, forms & analytics included"
         ),
-        "bot_link": "https://t.me/FramerBot",  # ← replace with real link
+        "bot_link": "https://t.me/FramerBot",
     },
     {
         "id": "granola",
@@ -143,7 +157,7 @@ OFFICIAL_BOTS = [
             "✅ AI-generated summaries & action items\n"
             "✅ Integrates with Google Meet, Zoom & Teams"
         ),
-        "bot_link": "https://t.me/GranolaBot",  # ← replace with real link
+        "bot_link": "https://t.me/GranolaBot",
     },
     {
         "id": "gumloop",
@@ -158,7 +172,7 @@ OFFICIAL_BOTS = [
             "✅ Connect any API or app\n"
             "✅ Run automations on a schedule or trigger"
         ),
-        "bot_link": "https://t.me/GumloopBot",  # ← replace with real link
+        "bot_link": "https://t.me/GumloopBot",
     },
     {
         "id": "lovable",
@@ -173,7 +187,7 @@ OFFICIAL_BOTS = [
             "✅ React + Supabase powered\n"
             "✅ One-click deploy to the web"
         ),
-        "bot_link": "https://t.me/LovableBot",  # ← replace with real link
+        "bot_link": "https://t.me/LovableBot",
     },
     {
         "id": "n8n",
@@ -188,18 +202,16 @@ OFFICIAL_BOTS = [
             "✅ Code nodes for custom logic\n"
             "✅ Self-hostable or cloud-hosted"
         ),
-        "bot_link": "https://t.me/n8nBot",  # ← replace with real link
+        "bot_link": "https://t.me/n8nBot",
     },
 ]
 
-# Build a lookup dict for fast access by id
 _BOT_BY_ID = {b["id"]: b for b in OFFICIAL_BOTS}
 
 
 # ─── KEYBOARDS ───────────────────────────────────────────────────────────────
 
 def build_official_subs_list_keyboard() -> InlineKeyboardMarkup:
-    """Main list: one button per bot."""
     rows = []
     for bot in OFFICIAL_BOTS:
         rows.append([
@@ -213,7 +225,6 @@ def build_official_subs_list_keyboard() -> InlineKeyboardMarkup:
 
 
 def build_bot_detail_keyboard(bot_id: str) -> InlineKeyboardMarkup:
-    """Detail view: Open Bot link + Subscribe + Back."""
     bot = _BOT_BY_ID.get(bot_id)
     if not bot:
         return InlineKeyboardMarkup([])
@@ -224,23 +235,47 @@ def build_bot_detail_keyboard(bot_id: str) -> InlineKeyboardMarkup:
     ])
 
 
+# ─── ROUTE HELPER (call this from inside handle_callback) ────────────────────
+
+async def route_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """
+    Call at the very top of your existing handle_callback():
+
+        if await official_subscriptions.route_callback(update, context):
+            return
+
+    Returns True if the callback was handled here (so handle_callback can return early).
+    Returns False if it's not an official-subs callback (handle_callback continues normally).
+    """
+    query = update.callback_query
+    data = query.data or ""
+
+    if data == "official_subs":
+        await handle_official_subs(update, context)
+        return True
+
+    if data.startswith("osub_detail_"):
+        await handle_bot_detail(update, context)
+        return True
+
+    if data.startswith("osub_buy_"):
+        await handle_subscribe(update, context)
+        return True
+
+    return False
+
+
 # ─── HANDLERS ────────────────────────────────────────────────────────────────
 
 async def handle_official_subs(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Triggered by callback_data='official_subs'.
-    Shows the full list of official subscription bots."""
     query = update.callback_query
     await query.answer()
-
-    text = (
+    await query.edit_message_text(
         "✅ <b>Official Subscriptions</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "Choose a subscription to see its description and open the bot:"
-    )
-    await query.edit_message_text(
-        text,
+        "Choose a subscription to see its description and open the bot:",
         parse_mode="HTML",
         reply_markup=build_official_subs_list_keyboard(),
     )
@@ -249,8 +284,6 @@ async def handle_official_subs(
 async def handle_bot_detail(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Triggered by callback_data='osub_detail_<id>'.
-    Shows the bot description, an Open Bot button, and a Subscribe button."""
     query = update.callback_query
     await query.answer()
 
@@ -260,15 +293,12 @@ async def handle_bot_detail(
         await query.answer("Bot not found.", show_alert=True)
         return
 
-    text = (
+    await query.edit_message_text(
         f"{bot['emoji']} <b>{bot['name']}</b>\n"
         f"⏳ <b>Duration:</b> {bot['duration']}\n"
         f"💰 <b>Price:</b> {bot['price']}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"{bot['description']}"
-    )
-    await query.edit_message_text(
-        text,
+        f"{bot['description']}",
         parse_mode="HTML",
         reply_markup=build_bot_detail_keyboard(bot_id),
     )
@@ -277,9 +307,6 @@ async def handle_bot_detail(
 async def handle_subscribe(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Triggered by callback_data='osub_buy_<id>'.
-    Redirects user to the Products section to complete the purchase
-    (you can replace this with a direct purchase flow if preferred)."""
     query = update.callback_query
     await query.answer()
 
