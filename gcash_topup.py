@@ -4,7 +4,7 @@ GCash top-up flow — with dynamic USD conversion + receipt upload.
 PHP_TO_USD_RATE is now stored in the DB (cay_shop_settings) and set
 by the admin via /admin → ⚙️ Bot Settings → 💱 Set GCash Rate.
 """
-
+import pending_gcash
 import random
 import logging
 from datetime import datetime, timedelta
@@ -344,8 +344,8 @@ async def handle_gcash_receipt_photo(update: Update, context: ContextTypes.DEFAU
         except Exception as e2:
             logger.error(f"Admin text fallback also failed: {e2}")
 
-        import pending_gcash
-        await pending_gcash.register_pending(user_id, pending, photo_file_id)
+    # ✅ Always register — moved outside except so it always runs
+    await pending_gcash.register_pending(user_id, pending, photo_file_id)
 
     await update.message.reply_text(
         "✅ <b>Receipt received!</b>\n\n"
