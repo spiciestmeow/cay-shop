@@ -35,6 +35,30 @@ def generate_order_number() -> str:
 
 DEFAULT_PHP_TO_USD_RATE = 56.0   # fallback if no row exists yet
 
+def get_lang(context) -> str:
+    """Fast sync check — use when you're sure lang was already set."""
+    return context.user_data.get("lang", "en")
+
+async def get_lang_db(user_id: int, context) -> str:
+    """
+    Use this everywhere in handlers.
+    Checks context.user_data first (fast), then falls back to DB
+    so language survives bot restarts.
+    """
+    if context.user_data.get("lang"):
+        return context.user_data["lang"]
+    import db
+    user = await db.get_user(user_id)
+    if user and user.get("lang"):
+        context.user_data["lang"] = user["lang"]
+        return user["lang"]
+    return "en"
+
+async def save_user_lang(user_id: int, lang_code: str) -> None:
+    """Save chosen language to the users table so it survives restarts."""
+    c = _client()
+    c.table(USERS_TABLE).update({"lang": lang_code}).eq("user_id", user_id).execute()
+
 async def get_setting(key: str) -> str | None:
     """Return the raw string value for a settings key, or None."""
     c = _client()

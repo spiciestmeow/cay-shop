@@ -1,52 +1,4 @@
-"""
-lang.py
-───────
-Multi-language support for CayShop Bot — English (en) + Tagalog (tl).
-
-All message strings are written in English only. When a user picks Tagalog,
-strings are translated via Google Translate (free, no API key) and cached in
-memory so each unique string is only translated once per bot session.
-
-INSTALL (add to your requirements.txt / Dockerfile):
-    pip install deep-translator
-
-HOW TO USE IN main.py
-──────────────────────
-1.  import lang
-
-2.  Get user's language:
-        user_lang = lang.get_lang(context)
-
-3.  Get a translated string (async — must be awaited):
-        text = await lang.t("help_text", user_lang)
-
-4.  Build a translated main menu:
-        reply_markup=lang.build_main_menu(user_lang)
-    (sync — menu labels are pre-defined, not translated on the fly)
-
-5.  Detect menu button presses across both languages:
-        if text in lang.ALL_MENU_BUTTONS:
-            canonical = lang.normalize_menu(text)   # → always English label
-            if canonical == "🛒 Products": ...
-
-6.  On /start, show language picker if not set yet:
-        if not context.user_data.get("lang"):
-            await update.message.reply_text(
-                "🌐 Please choose your language / Piliin ang iyong wika:",
-                reply_markup=lang.LANG_PICKER_KEYBOARD,
-            )
-            return
-
-7.  Handle lang_en / lang_tl callbacks (inside handle_callback):
-        if data == "lang_en":
-            context.user_data["lang"] = "en"
-            await query.answer("Language set to English ✅")
-            ...
-        elif data == "lang_tl":
-            context.user_data["lang"] = "tl"
-            await query.answer("Wika itinakda sa Tagalog ✅")
-            ...
-"""
+# ─── TRANSLATION ENGINE ───────────────────────────────────────────────────────
 
 import asyncio
 import logging
@@ -54,48 +6,64 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMa
 
 logger = logging.getLogger(__name__)
 
-# ─── TRANSLATION ENGINE ───────────────────────────────────────────────────────
+# Flat cache: { "tl:welcome": "Maligayang pagdating..." }
+_cache: dict[str, str] = {}
+_preloaded: bool = False
 
-_cache: dict[str, str] = {}  # "tl:<text>" → translated text
 
-
-async def translate_text(text: str, dest: str = "tl") -> str:
-    """
-    Translate text to dest language using Google Translate (free, no API key).
-    Results are cached in memory for the lifetime of the bot process.
-    Falls back to the original English text if translation fails.
-    """
-    if dest == "en" or not text.strip():
+async def _translate_one(text: str, dest: str) -> str:
+    """Translate a single string. Returns original on failure."""
+    if not text.strip():
         return text
-
     cache_key = f"{dest}:{text}"
     if cache_key in _cache:
         return _cache[cache_key]
-
     try:
         from deep_translator import GoogleTranslator
         loop = asyncio.get_event_loop()
-        translated = await loop.run_in_executor(
+        result = await loop.run_in_executor(
             None,
             lambda: GoogleTranslator(source="en", target=dest).translate(text)
         )
-        _cache[cache_key] = translated or text
+        _cache[cache_key] = result or text
         return _cache[cache_key]
     except Exception as e:
-        logger.warning(f"[lang] Translation failed ({dest}): {e} — falling back to English")
+        logger.warning(f"[lang] translate failed ({dest}): {e}")
         return text
 
 
-async def t(key: str, lang: str = "en") -> str:
+async def preload_translations(dest: str = "tl") -> None:
     """
-    Return the translated string for the given key.
-    If lang is 'en', returns the English string immediately (no network call).
-    If lang is 'tl', translates via Google Translate and caches the result.
+    Translate every string in STRINGS into `dest` language at startup.
+    Call this once from post_init. After this, t() is instant — no network.
+    """
+    global _preloaded
+    if _preloaded:
+        return
+    logger.info(f"[lang] Pre-loading all translations → {dest} ...")
+    for key, english in STRINGS.items():
+        cache_key = f"{dest}:{english}"
+        if cache_key not in _cache:
+            translated = await _translate_one(english, dest)
+            _cache[cache_key] = translated
+    _preloaded = True
+    logger.info(f"[lang] Done — {len(STRINGS)} strings ready.")
+
+
+async def t(key: str, language: str = "en") -> str:
+    """
+    Return the string for `key` in `language`.
+    - English: instant dict lookup, no network.
+    - Other: instant cache lookup after preload. Falls back to English.
     """
     english = STRINGS.get(key, f"[{key}]")
-    if lang == "en":
+    if language == "en":
         return english
-    return await translate_text(english, dest=lang)
+    cache_key = f"{language}:{english}"
+    if cache_key in _cache:
+        return _cache[cache_key]
+    # Not preloaded yet — translate on the fly and cache it
+    return await _translate_one(english, language)
 
 
 # ─── LANGUAGE PICKER ─────────────────────────────────────────────────────────
@@ -108,9 +76,20 @@ LANG_PICKER_KEYBOARD = InlineKeyboardMarkup([
 ])
 
 
-def get_lang(context) -> str:
-    """Returns the user's chosen language ('en' or 'tl'). Defaults to 'en'."""
-    return context.user_data.get("lang", "en")
+async def get_lang_db(user_id: int, context) -> str:
+    """
+    Get language — checks context.user_data first (fast), 
+    then falls back to DB if missing (e.g. after bot restart).
+    """
+    if context.user_data.get("lang"):
+        return context.user_data["lang"]
+    # Fallback: load from DB
+    import db
+    user = await db.get_user(user_id)
+    if user and user.get("lang"):
+        context.user_data["lang"] = user["lang"]  # cache it
+        return user["lang"]
+    return "en"
 
 
 # ─── MAIN MENU ────────────────────────────────────────────────────────────────
@@ -325,4 +304,7 @@ STRINGS: dict[str, str] = {
     # Errors
     "out_of_stock":    "❌ This item is currently out of stock.",
     "contact_support": "Need help? Contact @caydigitals",
+
+    "choose_service": "📋 <b>Choose a service:</b>",
+    "choose_option":  "Please choose an option from the menu below:",
 }

@@ -440,7 +440,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         ud.pop("gcash_pending", None)
         await db.set_session(tg_user.id, ud)
 
-    user_lang = lang.get_lang(context)
+    user_lang = await lang.get_lang_db(tg_user.id, context)
     welcome_text = await lang.t("welcome", user_lang)
     await update.message.reply_text(
         welcome_text,
@@ -482,7 +482,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = update.message.text
     canonical = lang.normalize_menu(text)
-    user_lang = lang.get_lang(context)  
+    user_lang = await lang.get_lang_db(user_id, context)
     user_id = update.effective_user.id
 
     if not await membership_gate.check_membership(context, user_id):
@@ -568,7 +568,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if canonical == "🛒 Products":
         kb = await build_products_keyboard()
-        await update.message.reply_text("<b>Choose a service:</b>", parse_mode="HTML", reply_markup=kb)
+        title = await lang.t("choose_service", user_lang)
+        await update.message.reply_text(title, parse_mode="HTML", reply_markup=kb)
 
     elif canonical == "👤 Profile":
         db_user = await db.get_user(update.effective_user.id)
@@ -582,16 +583,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await invite_center.show_invite_center(update, context)
 
     elif canonical == "💰 Top up balance":
-            await update.message.reply_text(
-                PAYMENT_METHODS_TEXT,
-                parse_mode="HTML",
-                reply_markup=build_payment_methods_keyboard(),
-            )
+        topup_text = await lang.t("payment_methods_text", user_lang)
+        await update.message.reply_text(
+            topup_text,
+            parse_mode="HTML",
+            reply_markup=build_payment_methods_keyboard(),
+        )
 
     elif canonical == "🎫 Redeem Code":
         await db.set_session(user_id, {"awaiting": "redeem_code"})
+        prompt = await lang.t("redeem_prompt", user_lang)
         await update.message.reply_text(
-            "🎫 Please send your redeem code:",
+            prompt,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("💬 Request Redeem Code", url="https://t.me/caydigitals")],
                 [InlineKeyboardButton("✕ Close", callback_data="close")],
@@ -619,9 +622,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
     else:
+        fallback = await lang.t("choose_option", user_lang)
         await update.message.reply_text(
-            "Please choose an option from the menu below:",
-            reply_markup=MAIN_MENU,
+            fallback,
+            reply_markup=lang.build_main_menu(user_lang),
         )
 
 async def handle_gcash_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1095,14 +1099,26 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if data == "lang_en":
         context.user_data["lang"] = "en"
+        await db.save_user_lang(user_id, "en")
         await query.answer("Language set to English ✅")
-        await query.message.edit_text("✅ English selected.", reply_markup=lang.LANG_PICKER_KEYBOARD)
+        welcome_text = await lang.t("welcome", "en")
+        await query.message.edit_text(
+            welcome_text,
+            parse_mode="HTML",
+            reply_markup=lang.build_main_menu("en"),
+        )
         return
 
     if data == "lang_tl":
         context.user_data["lang"] = "tl"
+        await db.save_user_lang(user_id, "tl")
         await query.answer("Wika itinakda sa Tagalog ✅")
-        await query.message.edit_text("✅ Tagalog napili.", reply_markup=lang.LANG_PICKER_KEYBOARD)
+        welcome_text = await lang.t("welcome", "tl")
+        await query.message.edit_text(
+            welcome_text,
+            parse_mode="HTML",
+            reply_markup=lang.build_main_menu("tl"),
+        )
         return
 
     if not await membership_gate.check_membership(context, user_id):
@@ -2086,6 +2102,9 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def post_init(application: Application) -> None:
     await application.bot.delete_webhook(drop_pending_updates=True)
+
+    await lang.preload_translations("tl")
+
     for attempt in range(20):
         try:
             await application.bot.get_updates(offset=-1, timeout=1)
