@@ -482,8 +482,8 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = update.message.text
     canonical = lang.normalize_menu(text)
-    user_lang = await lang.get_lang_db(user_id, context)
     user_id = update.effective_user.id
+    user_lang = await lang.get_lang_db(user_id, context)
 
     if not await membership_gate.check_membership(context, user_id):
         await membership_gate.send_gate_message(update, context)
@@ -1101,9 +1101,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         context.user_data["lang"] = "en"
         await db.save_user_lang(user_id, "en")
         await query.answer("Language set to English ✅")
+        await query.message.delete()
         welcome_text = await lang.t("welcome", "en")
-        await query.message.edit_text(
-            welcome_text,
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=welcome_text,
             parse_mode="HTML",
             reply_markup=lang.build_main_menu("en"),
         )
@@ -1113,9 +1115,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         context.user_data["lang"] = "tl"
         await db.save_user_lang(user_id, "tl")
         await query.answer("Wika itinakda sa Tagalog ✅")
+        await query.message.delete()
         welcome_text = await lang.t("welcome", "tl")
-        await query.message.edit_text(
-            welcome_text,
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=welcome_text,
             parse_mode="HTML",
             reply_markup=lang.build_main_menu("tl"),
         )
