@@ -33,13 +33,15 @@ async def _translate_one(text: str, dest: str) -> str:
 
 
 async def preload_translations(dest: str = "tl") -> None:
+    """
+    Translate every string in STRINGS into `dest` language at startup.
+    Call this once from post_init. After this, t() is instant — no network.
+    """
     global _preloaded
     if _preloaded:
         return
     logger.info(f"[lang] Pre-loading all translations → {dest} ...")
     for key, english in STRINGS.items():
-        if key in HTML_STRINGS:          # ← skip HTML strings
-            continue
         cache_key = f"{dest}:{english}"
         if cache_key not in _cache:
             translated = await _translate_one(english, dest)
@@ -48,20 +50,19 @@ async def preload_translations(dest: str = "tl") -> None:
     logger.info(f"[lang] Done — {len(STRINGS)} strings ready.")
 
 
-HTML_STRINGS = {
-    "welcome", "help_text", "payment_methods_text",
-    "binance_info", "polygon_info", "trc20_info", "stars_info",
-    "official_subs_empty", "topup_title", "default_policy",
-}
-
 async def t(key: str, language: str = "en") -> str:
+    """
+    Return the string for `key` in `language`.
+    - English: instant dict lookup, no network.
+    - Other: instant cache lookup after preload. Falls back to English.
+    """
     english = STRINGS.get(key, f"[{key}]")
-    # Never auto-translate HTML strings — return English always
-    if language == "en" or key in HTML_STRINGS:
+    if language == "en":
         return english
     cache_key = f"{language}:{english}"
     if cache_key in _cache:
         return _cache[cache_key]
+    # Not preloaded yet — translate on the fly and cache it
     return await _translate_one(english, language)
 
 
@@ -176,6 +177,28 @@ STRINGS: dict[str, str] = {
         "✉️ If you need help, please contact\n"
         "<b>Customer Support:</b> @caydigitals\n\n"
         "⏳ You will receive a response once your request has been reviewed"
+    ),
+
+    # Bot Policy
+    "default_policy": (
+        "🗒 <b>Bot Policy</b>\n\n"
+        "We believe in complete transparency with our customers and do not seek to annoy or exploit anyone. "
+        "Please read the following policy carefully before using our services:\n\n"
+        "1️⃣ <b>Refund Policy:</b>\n"
+        "Funds cannot be refunded after depositing to the bot, except in one case only: if you deposit and do not "
+        "purchase any product (i.e., the transaction is incomplete), in this case your money will be fully refunded.\n\n"
+        "2️⃣ <b>Warranty Policy:</b>\n"
+        "We guarantee all products that mention warranty. In case of any problem during the warranty period, "
+        "we will take one of the following actions:\n"
+        "• Replace the service immediately and compensate the user.\n"
+        "• Or if the user does not wish to replace, the amount will be returned as balance in the bot and "
+        "can be used to purchase any other product.\n\n"
+        "3️⃣ <b>Free Credits:</b>\n"
+        "Funds received by the user through redeem codes or referral rewards cannot be refunded.\n\n"
+        "4️⃣ <b>Our Commitment:</b>\n"
+        "We are fully responsible for our services and strive to ensure that no customer is annoyed or harmed.\n\n"
+        "5️⃣ <b>Our Promise:</b>\n"
+        "We promise to always be honest and faithful with you, and strive to be the best in providing these services."
     ),
 
     # Payment Methods
