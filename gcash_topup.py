@@ -344,6 +344,9 @@ async def handle_gcash_receipt_photo(update: Update, context: ContextTypes.DEFAU
         except Exception as e2:
             logger.error(f"Admin text fallback also failed: {e2}")
 
+        import pending_gcash
+        await pending_gcash.register_pending(user_id, pending, photo_file_id)
+
     await update.message.reply_text(
         "✅ <b>Receipt received!</b>\n\n"
         f"💰 PHP: <b>₱{unique_php:.2f}</b>\n"

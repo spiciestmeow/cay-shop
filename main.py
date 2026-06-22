@@ -2037,6 +2037,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         amount_usd = round(amount_php / rate, 2)
 
         await db.credit_balance(target_user_id, amount_php, rate=rate)
+        import pending_gcash
+        await pending_gcash.clear_pending(target_user_id)
         await query.answer("✅ Balance credited!", show_alert=True)
 
         # Get existing plain-text caption and replace the status line
@@ -2093,6 +2095,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if data.startswith("admin_reject_gcash_"):
         target_user_id = int(data.split("_")[3])
+        import pending_gcash
+        await pending_gcash.clear_pending(target_user_id)
         await query.answer("❌ Claim rejected.", show_alert=True)
 
         # Rebuild caption with updated status line, remove all buttons
