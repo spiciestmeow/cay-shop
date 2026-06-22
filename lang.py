@@ -179,28 +179,6 @@ STRINGS: dict[str, str] = {
         "⏳ You will receive a response once your request has been reviewed"
     ),
 
-    # Bot Policy
-    "default_policy": (
-        "🗒 <b>Bot Policy</b>\n\n"
-        "We believe in complete transparency with our customers and do not seek to annoy or exploit anyone. "
-        "Please read the following policy carefully before using our services:\n\n"
-        "1️⃣ <b>Refund Policy:</b>\n"
-        "Funds cannot be refunded after depositing to the bot, except in one case only: if you deposit and do not "
-        "purchase any product (i.e., the transaction is incomplete), in this case your money will be fully refunded.\n\n"
-        "2️⃣ <b>Warranty Policy:</b>\n"
-        "We guarantee all products that mention warranty. In case of any problem during the warranty period, "
-        "we will take one of the following actions:\n"
-        "• Replace the service immediately and compensate the user.\n"
-        "• Or if the user does not wish to replace, the amount will be returned as balance in the bot and "
-        "can be used to purchase any other product.\n\n"
-        "3️⃣ <b>Free Credits:</b>\n"
-        "Funds received by the user through redeem codes or referral rewards cannot be refunded.\n\n"
-        "4️⃣ <b>Our Commitment:</b>\n"
-        "We are fully responsible for our services and strive to ensure that no customer is annoyed or harmed.\n\n"
-        "5️⃣ <b>Our Promise:</b>\n"
-        "We promise to always be honest and faithful with you, and strive to be the best in providing these services."
-    ),
-
     # Payment Methods
     "payment_methods_text": (
         "<blockquote>💳 <b>Choose your preferred payment method:</b></blockquote>\n"

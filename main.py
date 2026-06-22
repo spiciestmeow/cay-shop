@@ -73,6 +73,7 @@ DEFAULT_BOT_POLICY = (
 )
 
 POLICY_SETTING_KEY = "bot_policy"
+_policy_cache: dict[str, str] = {}
 
 async def get_bot_policy() -> str:
     saved = await db.get_setting(POLICY_SETTING_KEY)
@@ -603,6 +604,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     elif canonical == "📋 Bot Policy":
         policy_text = await get_bot_policy()
+
+        if user_lang != "en":
+            cache_key = f"policy:{user_lang}"
+            if cache_key not in _policy_cache:
+                from lang import _translate_one
+                _policy_cache[cache_key] = await _translate_one(policy_text, user_lang)
+            policy_text = _policy_cache[cache_key]
+
         await update.message.reply_text(
             policy_text,
             parse_mode="HTML",
@@ -912,6 +921,7 @@ async def _process_admin_input(update: Update, context: ContextTypes.DEFAULT_TYP
             return
 
         await db.set_setting(POLICY_SETTING_KEY, new_policy)
+        _policy_cache.clear() 
         await update.message.reply_text(
             "✅ <b>Bot Policy updated!</b>\n\nEvery user will now see this new version immediately — no restart needed.",
             parse_mode="HTML",
