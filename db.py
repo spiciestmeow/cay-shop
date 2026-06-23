@@ -92,11 +92,11 @@ async def get_category(cat_id: int) -> dict | None:
     return res.data[0] if res.data else None
 
 
-async def add_category(name: str, emoji: str) -> int:
+async def add_category(name: str, emoji: str, type: str = "regular") -> int:
     c = _client()
     pos_res = c.table(CATEGORIES_TABLE).select("position").order("position", desc=True).limit(1).execute()
     next_pos = (pos_res.data[0]["position"] + 1) if pos_res.data else 1
-    res = c.table(CATEGORIES_TABLE).insert({"name": name, "emoji": emoji, "position": next_pos}).execute()
+    res = c.table(CATEGORIES_TABLE).insert({"name": name, "emoji": emoji, "position": next_pos, "type": type}).execute()
     return res.data[0]["id"]
 
 
