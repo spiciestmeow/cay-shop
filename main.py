@@ -492,20 +492,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     text = update.message.text
     canonical = lang.normalize_menu(text)
     user_id = update.effective_user.id
-    user_lang = await lang.get_lang_db(user_id, context)
 
-    if not await membership_gate.check_membership(context, user_id):
+    membership_ok, is_banned, ud, user_lang = await asyncio.gather(
+        membership_gate.check_membership(context, user_id),
+        ban_manager.is_user_banned(user_id),
+        db.get_session(user_id),
+        lang.get_lang_db(user_id, context),
+    )
+
+    if not membership_ok:
         await membership_gate.send_gate_message(update, context)
         return
 
-    if await ban_manager.is_user_banned(user_id):
+    if is_banned:
         await update.message.reply_text(ban_manager.BANNED_MESSAGE, parse_mode="HTML")
         return
 
     await invite_center.mark_interaction_and_maybe_qualify(context, user_id)
 
     # ── GCash amount entry (any user, not just admins) ──
-    ud = await db.get_session(user_id)
     if ud.get("awaiting") == "gcash_amount":
         result = await gcash_topup.handle_gcash_amount_input(update, context, ud)
         if result != "fallthrough":
@@ -1063,13 +1068,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     data = query.data
     user_id = update.effective_user.id
 
-    if await ban_manager.route_callback(update, context):
-        return
-
-    if await pending_gcash.route_callback(update, context):
-        return
-
-    if await official_subscriptions.route_callback(update, context):
+    ban_routed, gcash_routed, subs_routed = await asyncio.gather(
+        ban_manager.route_callback(update, context),
+        pending_gcash.route_callback(update, context),
+        official_subscriptions.route_callback(update, context),
+    )
+    if ban_routed or gcash_routed or subs_routed:
         return
 
     if data.startswith(invite_center.CAPTCHA_CB_PREFIX):

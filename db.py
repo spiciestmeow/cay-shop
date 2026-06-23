@@ -17,10 +17,15 @@ USERS_TABLE         = "cay_shop_users"
 STATES_TABLE        = "cay_shop_states"
 TRANSACTIONS_TABLE  = "cay_shop_transactions"
 REDEEM_CODES_TABLE  = "cay_shop_redeem_codes"
-SETTINGS_TABLE      = "cay_shop_settings"   # ← NEW: key/value store
+SETTINGS_TABLE      = "cay_shop_settings"
+
+_supabase: Client | None = None
 
 def _client() -> Client:
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+    global _supabase
+    if _supabase is None:
+        _supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    return _supabase
 
 def generate_order_number() -> str:
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=14))
