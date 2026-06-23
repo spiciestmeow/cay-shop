@@ -37,7 +37,7 @@ async def handle_official_subs(
             "Check back soon!",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Back to services", callback_data="back_to_products")]
+                [InlineKeyboardButton("Back to services", callback_data="back_to_products")]
             ]),
         )
         return
@@ -53,7 +53,7 @@ async def handle_official_subs(
     buttons.append([InlineKeyboardButton("⬅️ Back to services", callback_data="back_to_products")])
 
     await query.edit_message_text(
-        "✅ <b>Official Subscriptions</b>\n\nChoose a subscription:",
+        "Choose a product:",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
