@@ -1,8 +1,3 @@
-bash
-
-cat > /home/claude/bot/lang.py << 'LANGEOF'
-# ─── TRANSLATION ENGINE ───────────────────────────────────────────────────────
-
 import asyncio
 import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
