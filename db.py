@@ -117,6 +117,8 @@ async def update_category(cat_id: int, name: str | None = None, emoji: str | Non
         updates["name"] = name
     if emoji is not None:
         updates["emoji"] = emoji
+    if type is not None:
+        updates["type"] = type
     if updates:
         c.table(CATEGORIES_TABLE).update(updates).eq("id", cat_id).execute()
 
