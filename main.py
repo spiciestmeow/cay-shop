@@ -444,9 +444,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # Clear any stale GCash deposit flow if user runs /start mid-flow
     ud = await db.get_session(tg_user.id)
-    if ud.get("awaiting") == "gcash_amount" or ud.get("gcash_pending"):
-        ud.pop("awaiting", None)
-        ud.pop("gcash_pending", None)
+    stale_keys = {"awaiting", "gcash_pending", "awaiting_receipt"}
+    if any(k in ud for k in stale_keys):
+        for k in stale_keys:
+            ud.pop(k, None)
         await db.set_session(tg_user.id, ud)
 
     user_lang = await lang.get_lang_db(tg_user.id, context)
@@ -527,9 +528,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # ── Redeem code entry (any user) ──
     if ud.get("awaiting") == "redeem_code":
-        await db.clear_session(user_id)  # consume the awaiting state either way
-        code = text.strip().upper()
-        redeem = await db.get_redeem_code(code)
+        if canonical in lang.ALL_MENU_BUTTONS:
+            await db.clear_session(user_id)
+            # falls through to menu handling below
+        else:
+            await db.clear_session(user_id)
+            code = text.strip().upper()
+            redeem = await db.get_redeem_code(code)
 
         if not redeem:
             await update.message.reply_text(
