@@ -536,22 +536,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             code = text.strip().upper()
             redeem = await db.get_redeem_code(code)
 
-        if not redeem:
-            await update.message.reply_text(
-                "❌ <b>Invalid redeem code.</b>\n\nPlease check the code and try again, "
-                "or contact support if you believe this is an error.",
-                parse_mode="HTML",
-                reply_markup=MAIN_MENU,
-            )
-            return
+            if not redeem:
+                await update.message.reply_text(
+                    "❌ <b>Invalid redeem code.</b>\n\nPlease check the code and try again, "
+                    "or contact support if you believe this is an error.",
+                    parse_mode="HTML",
+                    reply_markup=MAIN_MENU,
+                )
+                return
 
-        if redeem["is_used"]:
-            await update.message.reply_text(
-                "❌ <b>This redeem code has already been used.</b>",
-                parse_mode="HTML",
-                reply_markup=MAIN_MENU,
-            )
-            return
+            if redeem["is_used"]:
+                await update.message.reply_text(
+                    "❌ <b>This redeem code has already been used.</b>",
+                    parse_mode="HTML",
+                    reply_markup=MAIN_MENU,
+                )
+                return
 
         amount = float(redeem["amount_usd"])
         await db.mark_redeem_code_used(code, user_id)
