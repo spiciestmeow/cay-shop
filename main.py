@@ -553,35 +553,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
                 return
 
-        amount = float(redeem["amount_usd"])
-        await db.mark_redeem_code_used(code, user_id)
-        await db.credit_balance_usd(user_id, amount, description=f"Redeem code: {code}")
+            amount = float(redeem["amount_usd"])
+            await db.mark_redeem_code_used(code, user_id)
+            await db.credit_balance_usd(user_id, amount, description=f"Redeem code: {code}")
 
-        await update.message.reply_text(
-            f"✅ <b>Redeem successful!</b>\n\n"
-            f"💰 <b>${amount:.2f}</b> has been added to your balance.",
-            parse_mode="HTML",
-            reply_markup=MAIN_MENU,
-        )
+            await update.message.reply_text(
+                f"✅ <b>Redeem successful!</b>\n\n"
+                f"💰 <b>${amount:.2f}</b> has been added to your balance.",
+                parse_mode="HTML",
+                reply_markup=MAIN_MENU,
+            )
 
-        # ── Channel notification (same style as GCash, masked amount) ──
-        if CHANNEL_ID:
-            try:
-                await context.bot.send_message(
-                    chat_id=CHANNEL_ID,
-                    text=(
-                        f"🤑 <b>New Credits Added!</b>\n\n"
-                        f"<blockquote>"
-                        f"👤 <b>User:</b> <code>{mask_user_id(user_id)}</code>\n"
-                        f"💵 <b>Amount:</b> 🤑\n"
-                        f"💳 <b>Method:</b> Redeem Code 💳"
-                        f"</blockquote>"
-                    ),
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
-        return
+            if CHANNEL_ID:
+                try:
+                    await context.bot.send_message(
+                        chat_id=CHANNEL_ID,
+                        text=(
+                            f"🤑 <b>New Credits Added!</b>\n\n"
+                            f"<blockquote>"
+                            f"👤 <b>User:</b> <code>{mask_user_id(user_id)}</code>\n"
+                            f"💵 <b>Amount:</b> 🤑\n"
+                            f"💳 <b>Method:</b> Redeem Code 💳"
+                            f"</blockquote>"
+                        ),
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
+            return
 
     if is_admin(user_id) and canonical not in MENU_BUTTONS:
         ud = await db.get_session(user_id)
