@@ -518,6 +518,57 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
         # else: fall through below so the menu button still does its thing
 
+    # ── Custom quantity input (any user) ──
+    if ud.get("awaiting") == "custom_qty":
+        if canonical in lang.ALL_MENU_BUTTONS:
+            await db.clear_session(user_id)
+            # falls through to menu handling
+        else:
+            prod_id = ud.get("qty_prod_id")
+            await db.clear_session(user_id)
+            try:
+                qty = int(text.strip())
+                if qty < 1:
+                    raise ValueError
+            except ValueError:
+                await update.message.reply_text("❌ Please enter a valid whole number (e.g. 3):")
+                await db.set_session(user_id, ud)   # restore session so they can retry
+                return
+            prod = await db.get_product(prod_id)
+            if not prod or prod["stock"] < qty:
+                await update.message.reply_text(
+                    f"❌ Only <b>{prod['stock'] if prod else 0}</b> in stock.",
+                    parse_mode="HTML",
+                    reply_markup=MAIN_MENU,
+                )
+                return
+            db_user = await db.get_user(user_id)
+            balance = float(db_user.get("balance", 0)) if db_user else 0.0
+            price = prod["price"]
+            total = round(price * qty, 2)
+            tier = db.get_status_tier(float(db_user.get("total_spent", 0)))
+            discount_pct = tier["discount"]
+            discounted_unit = round(price * (1 - discount_pct / 100), 2)
+            discounted_total = round(discounted_unit * qty, 2)
+
+            await update.message.reply_text(
+                f"🛒 <b>Confirm Purchase</b>\n\n"
+                f"📦 Product: <b>{prod['name']}</b>\n"
+                f"🔢 Quantity: <b>{qty}x</b>\n"
+                f"💰 Unit price: <b>${price:.2f}</b>\n"
+                + (f"🏷️ Your discount: <b>{discount_pct}%</b> → <b>${discounted_unit:.2f}</b>/each\n" if discount_pct > 0 else "")
+                + f"💵 Total: <b>${discounted_total:.2f}</b>\n"
+                f"👛 Your balance: <b>${balance:.2f}</b>\n"
+                f"💳 Balance after: <b>${round(balance - discounted_total, 2):.2f}</b>\n\n"
+                f"Tap <b>Confirm</b> to complete your purchase.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_buy_{prod_id}_{qty}")],
+                    [InlineKeyboardButton("❌ Cancel", callback_data=f"buy_{prod_id}")],
+                ]),
+            )
+            return
+
     # ── GCash receipt awaiting (any user) ──
     if ud.get("awaiting_receipt"):
         await update.message.reply_text(
@@ -1609,56 +1660,121 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if not prod:
             await query.answer("Product not found.", show_alert=True)
             return
-        if prod["stock"] <= 0:
-            await query.answer("❌ This product is out of stock.", show_alert=True)
+        if prod["stock"] < qty:
+            await query.answer(f"❌ Only {prod['stock']} in stock.", show_alert=True)
             return
         db_user = await db.get_user(user_id)
         balance = float(db_user.get("balance", 0)) if db_user else 0.0
         price = prod["price"]
-        if balance < price:
+
+        # ── Show quantity picker ──
+        max_qty = min(prod["stock"], 25)
+        preset_qtys = [q for q in [1, 2, 3, 5, 10, 15, 20, 25] if q <= max_qty]
+
+        rows = []
+        row = []
+        for qty in preset_qtys:
+            row.append(InlineKeyboardButton(str(qty), callback_data=f"qty_{prod_id}_{qty}"))
+            if len(row) == 4:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+        rows.append([InlineKeyboardButton("✏️ Custom qty", callback_data=f"qty_custom_{prod_id}")])
+        rows.append([
+            InlineKeyboardButton("⬅️ Back to Product", callback_data=f"user_prod_{prod_id}"),
+            InlineKeyboardButton("❌ Cancel", callback_data="close"),
+        ])
+
+        await query.answer()
+        await query.message.edit_text(
+            f"📦 <b>{prod['name']}</b>\n\n"
+            f"Choose quantity (1–{max_qty}):",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(rows),
+        )
+        return
+
+    # ── Quantity selected (preset) ──
+    if data.startswith("qty_") and not data.startswith("qty_custom_"):
+        parts = data.split("_")   # ["qty", prod_id, qty]
+        prod_id = int(parts[1])
+        qty = int(parts[2])
+        prod = await db.get_product(prod_id)
+        if not prod:
+            await query.answer("Product not found.", show_alert=True)
+            return
+        if prod["stock"] < qty:
+            await query.answer(f"❌ Only {prod['stock']} in stock.", show_alert=True)
+            return
+        db_user = await db.get_user(user_id)
+        balance = float(db_user.get("balance", 0)) if db_user else 0.0
+        price = prod["price"]
+        total = round(price * qty, 2)
+
+        if balance < total:
             await query.answer()
             await query.message.edit_text(
                 f"❌ <b>Insufficient balance.</b>\n\n"
-                f"Required: <b>${price:.2f}</b>\n"
+                f"Required: <b>${total:.2f}</b> ({qty}x)\n"
                 f"Your balance: <b>${balance:.2f}</b>\n\n"
                 f"Please top up your balance to continue.",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("💰 Top up balance", callback_data="topup_from_buy")],
-                    [InlineKeyboardButton("⬅️ Back", callback_data=f"user_prod_{prod_id}")],
+                    [InlineKeyboardButton("⬅️ Back", callback_data=f"buy_{prod_id}")],
                 ]),
             )
             return
 
         delivery_url = (prod.get("delivery_url") or "").strip()
         if not delivery_url:
-            await query.answer("⚠️ This product has no delivery URL set. Please contact support.", show_alert=True)
+            await query.answer("⚠️ No delivery URL set. Please contact support.", show_alert=True)
             return
 
-        # ── Confirm screen before charging ──
-        await query.answer()
-        db_user_tier = db.get_status_tier(float(db_user.get("total_spent", 0)))
-        discount_pct = db_user_tier["discount"]
-        discounted_price = round(price * (1 - discount_pct / 100), 2)
+        tier = db.get_status_tier(float(db_user.get("total_spent", 0)))
+        discount_pct = tier["discount"]
+        discounted_unit = round(price * (1 - discount_pct / 100), 2)
+        discounted_total = round(discounted_unit * qty, 2)
 
+        await query.answer()
         await query.message.edit_text(
             f"🛒 <b>Confirm Purchase</b>\n\n"
             f"📦 Product: <b>{prod['name']}</b>\n"
-            f"💰 Original price: <b>${price:.2f}</b>\n"
-            + (f"🏷️ Your discount: <b>{discount_pct}%</b> → <b>${discounted_price:.2f}</b>\n" if discount_pct > 0 else "")
-            + f"👛 Your balance: <b>${balance:.2f}</b>\n"
-            f"💳 Balance after: <b>${round(balance - discounted_price, 2):.2f}</b>\n\n"
+            f"🔢 Quantity: <b>{qty}x</b>\n"
+            f"💰 Unit price: <b>${price:.2f}</b>\n"
+            + (f"🏷️ Your discount: <b>{discount_pct}%</b> → <b>${discounted_unit:.2f}</b>/each\n" if discount_pct > 0 else "")
+            + f"💵 Total: <b>${discounted_total:.2f}</b>\n"
+            f"👛 Your balance: <b>${balance:.2f}</b>\n"
+            f"💳 Balance after: <b>${round(balance - discounted_total, 2):.2f}</b>\n\n"
             f"Tap <b>Confirm</b> to complete your purchase.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_buy_{prod_id}")],
-                [InlineKeyboardButton("❌ Cancel",  callback_data=f"user_prod_{prod_id}")],
+                [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_buy_{prod_id}_{qty}")],
+                [InlineKeyboardButton("❌ Cancel", callback_data=f"buy_{prod_id}")],
             ]),
         )
         return
 
-    if data.startswith("confirm_buy_"):
+    # ── Custom quantity input ──
+    if data.startswith("qty_custom_"):
         prod_id = int(data.split("_")[2])
+        prod = await db.get_product(prod_id)
+        if not prod:
+            await query.answer("Product not found.", show_alert=True)
+            return
+        await db.set_session(user_id, {"awaiting": "custom_qty", "qty_prod_id": prod_id})
+        await query.answer()
+        await query.message.reply_text(
+            f"✏️ Enter the quantity you want (1–{prod['stock']}):",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    if data.startswith("confirm_buy_"):
+        parts = data.split("_")   # ["confirm", "buy", prod_id, qty]
+        prod_id = int(parts[2])
+        qty = int(parts[3]) if len(parts) > 3 else 1
         prod = await db.get_product(prod_id)
         if not prod:
             await query.answer("Product not found.", show_alert=True)
@@ -1669,7 +1785,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         db_user = await db.get_user(user_id)
         balance = float(db_user.get("balance", 0)) if db_user else 0.0
         price = prod["price"]
-        if balance < price:
+        if balance < final_price:
             await query.answer("❌ Insufficient balance.", show_alert=True)
             return
 
@@ -1681,15 +1797,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # Apply tier discount
         tier = db.get_status_tier(float(db_user.get("total_spent", 0)))
         discount_pct = tier["discount"]
-        final_price = round(price * (1 - discount_pct / 100), 2)
+        final_unit = round(price * (1 - discount_pct / 100), 2)
+        final_price = round(final_unit * qty, 2)   # ← was just final_unit * 1
 
         if balance < final_price:
             await query.answer("❌ Insufficient balance.", show_alert=True)
             return
 
+        if prod["stock"] < qty:
+            await query.answer(f"❌ Only {prod['stock']} in stock.", show_alert=True)
+            return
+
         # ── Process the purchase ──
         await db.record_purchase(user_id, final_price, product_name=prod['name'], is_admin_purchase=is_admin(user_id))
-        await db.update_product_stock(prod_id, prod["stock"] - 1)
+        await db.update_product_stock(prod_id, prod["stock"] - qty)   # ← deduct qty not 1
 
         await query.answer("✅ Purchase successful!", show_alert=True)
         import random, string
@@ -1697,7 +1818,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         await query.message.edit_text(
             f"✅ <b>Purchase Successful!</b>\n\n"
-            f"📦 <b>{prod['name']}</b>\n"
+            f"📦 <b>{prod['name']}</b> × {qty}\n"
             f"💰 <b>${final_price:.2f}</b> deducted from your balance"
             + (f" <i>(discount applied: {discount_pct}%)</i>" if discount_pct > 0 else "")
             + "\n\n"
@@ -1728,7 +1849,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 f"👤 <b>By:</b> <code>ADMIN</code>\n"
                 f"🎁 <b>Plan:</b> {prod['name']}\n"
                 f"🧾 <b>Order No.:</b> <code>{order_no}</code>\n"
-                f"🔢 <b>QTY:</b> 1\n"
+                f"🔢 <b>QTY:</b> {qty}\n"
                 f"📊 <b>Admin Total:</b> {admin_total}"
                 f"</blockquote>"
             )
@@ -1742,7 +1863,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 f"👤 <b>By:</b> <code>{mask_user_id(user_id)}</code>\n"
                 f"🎁 <b>Plan:</b> {prod['name']}\n"
                 f"🧾 <b>Order No.:</b> <code>{order_no}</code>\n"
-                f"🔢 <b>QTY:</b> 1\n"
+                f"🔢 <b>QTY:</b> {qty}\n"
                 f"📊 <b>Total Purchase!:</b> {total_purchases}"
                 f"</blockquote>"
             )
