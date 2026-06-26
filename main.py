@@ -1681,7 +1681,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         desc     = (prod.get("description") or "").strip()
         text = (
             f"📦 <b>{prod['name']}</b>\n\n"
-            f"💰 {price:.2f} USD\n"
+            f"💰 <b>{price:.2f}</b> USD\n"
             f"⏳ Duration: {duration}\n"
             f"🛡 Warranty: {warranty}\n"
             f"📦 Delivery: {delivery}\n"
