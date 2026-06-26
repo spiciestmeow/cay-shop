@@ -540,12 +540,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             prod = await db.get_product(prod_id)
             if not prod or prod["stock"] < qty:
                 await update.message.reply_text(
-                    f"❌ Only <b>{prod['stock'] if prod else 0}</b> in stock.",
+                    f"❌ Only <b>{prod['stock'] if prod else 0}</b> in stock. "
+                    f"Please enter a number between 1 and {prod['stock'] if prod else 0}:",
                     parse_mode="HTML",
-                    reply_markup=MAIN_MENU,
                 )
-                await db.clear_session(user_id)
-                return
+                return  # ← session stays alive, no MAIN_MENU shown
 
             # All good — now clear the session
             await db.clear_session(user_id)
