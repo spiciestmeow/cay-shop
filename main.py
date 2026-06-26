@@ -365,20 +365,25 @@ def build_admin_prod_detail_text(prod: dict) -> str:
     demo = prod.get("demo_url") or "—"
     delivery_url = prod.get("delivery_url") or "—"
     desc = (prod.get("description") or "—").strip()
+    display_format = prod.get("display_format") or "regular"
+    format_label = "🎫 Membership Card" if display_format == "membership" else "📦 Regular"
     return (
         f"📦 <b>#{prod['id']} {prod['name']}</b>\n\n"
         f"🏷 <b>Type:</b> {prod.get('type') or '—'}\n"
+        f"🖼 <b>Display Format:</b> {format_label}\n"
         f"💲 <b>Price:</b> ${prod['price']:.2f}\n"
         f"📦 <b>Stock:</b> {stock_icon} {prod['stock']}x\n"
         f"⏳ <b>Duration:</b> {prod.get('duration') or '—'}\n"
         f"🛡 <b>Warranty:</b> {prod.get('warranty') or 'No warranty'}\n"
         f"📬 <b>Delivery:</b> {prod.get('delivery') or 'LINK'}\n"
-        f"🎮 <b>Demo URL:</b> {demo}\n"
+        f"🎮 <b>{'Access Bot URL' if display_format == 'membership' else 'Demo URL'}:</b> {demo}\n"
         f"🔗 <b>Delivery URL:</b> {delivery_url}\n\n"
         f"📝 <b>Description:</b>\n{desc}"
     )
 
-def admin_prod_edit_keyboard(prod_id: int, cat_id: int) -> InlineKeyboardMarkup:
+def admin_prod_edit_keyboard(prod_id: int, cat_id: int, display_format: str = "regular") -> InlineKeyboardMarkup:
+    format_toggle_label = "🎫 Switch → Membership Card" if display_format == "regular" else "📦 Switch → Regular"
+    demo_label = "🤖 Access Bot URL" if display_format == "membership" else "🎮 Demo URL"
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✏️ Name",        callback_data=f"admin_editprod_name_{prod_id}"),
@@ -394,13 +399,13 @@ def admin_prod_edit_keyboard(prod_id: int, cat_id: int) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("📬 Delivery",     callback_data=f"admin_editprod_delivery_{prod_id}"),
-            InlineKeyboardButton("🎮 Demo URL",     callback_data=f"admin_editprod_demo_{prod_id}"),
+            InlineKeyboardButton(demo_label,        callback_data=f"admin_editprod_demo_{prod_id}"),
         ],
         [
             InlineKeyboardButton("🔗 Delivery URL", callback_data=f"admin_editprod_deliveryurl_{prod_id}"),
         ],
-        [InlineKeyboardButton("🔗 Bot Link", callback_data=f"admin_editprod_botlink_{prod_id}")],
         [InlineKeyboardButton("🏷 Type", callback_data=f"admin_editprod_type_{prod_id}")],
+        [InlineKeyboardButton(format_toggle_label, callback_data=f"admin_editprod_format_{prod_id}")],
         [InlineKeyboardButton("🗑 Delete Product",  callback_data=f"admin_delprod_{prod_id}")],
         [InlineKeyboardButton("⬅️ Back",            callback_data=f"admin_prodcat_{cat_id}")],
     ])
@@ -1803,31 +1808,49 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.answer()
         cat = await db.get_category(prod["category_id"])
         cat_emoji = cat["emoji"] if cat else "📦"
-        price    = prod["price"]
-        duration = prod.get("duration") or "—"
-        warranty = prod.get("warranty") or "No warranty"
-        delivery = prod.get("delivery") or "LINK"
-        desc     = (prod.get("description") or "").strip()
+        price     = prod["price"]
+        duration  = prod.get("duration") or "—"
+        warranty  = prod.get("warranty") or "No warranty"
+        delivery  = prod.get("delivery") or "LINK"
+        desc      = (prod.get("description") or "").strip()
         prod_type = prod.get("type") or ""
-        text = (
-            f"📦 <b>{prod['name']}</b>\n\n"
-            f"💰 <b>{price:.2f}</b> <code>USD</code>\n"
-            f"⏳ <b>Duration:</b> <code>{duration}</code>\n"
-            f"🛡 <b>Warranty:</b> <code>{warranty}</code>\n"
-            + (f"🏷 <b>Type:</b> <code>{prod_type}</code>\n" if prod_type else "")
-            +f"📦 <b>Delivery:</b> <code>{delivery}</code>\n"
-        )
-        if desc:
-            text += f"\n{desc}\n"
-        # Build the button row — Demo beside Buy only when a URL exists
-        demo_url = (prod.get("demo_url") or "").strip()
-        action_row = []
-        if demo_url:
-            action_row.append(InlineKeyboardButton("🎮 Demo", url=demo_url))
-        if prod["stock"] > 0:
-            action_row.append(InlineKeyboardButton("🚀 Buy", callback_data=f"buy_{prod_id}"))
+        display_format = prod.get("display_format") or "regular"
+        demo_url  = (prod.get("demo_url") or "").strip()
+
+        if display_format == "membership":
+            text = f"{cat_emoji} <b>{prod['name']}</b>\n\n"
+            if desc:
+                text += f"{desc}\n\n"
+            text += (
+                f"💰 <b>Price:</b> ${price:.2f} <code>USD</code>\n"
+                f"⏳ <b>Duration:</b> {duration}\n"
+                f"🛡 <b>Warranty:</b> {warranty}\n"
+            )
+            action_row = []
+            if demo_url:
+                action_row.append(InlineKeyboardButton("🤖 Access Bot", url=demo_url))
+            if prod["stock"] > 0:
+                action_row.append(InlineKeyboardButton("🚀 Buy", callback_data=f"buy_{prod_id}"))
+            else:
+                action_row.append(InlineKeyboardButton("❌ Out of Stock", callback_data="noop"))
         else:
-            action_row.append(InlineKeyboardButton("❌ Out of Stock", callback_data="noop"))
+            text = (
+                f"📦 <b>{prod['name']}</b>\n\n"
+                f"💰 <b>{price:.2f}</b> <code>USD</code>\n"
+                f"⏳ <b>Duration:</b> <code>{duration}</code>\n"
+                f"🛡 <b>Warranty:</b> <code>{warranty}</code>\n"
+                + (f"🏷 <b>Type:</b> <code>{prod_type}</code>\n" if prod_type else "")
+                + f"📦 <b>Delivery:</b> <code>{delivery}</code>\n"
+            )
+            if desc:
+                text += f"\n{desc}\n"
+            action_row = []
+            if demo_url:
+                action_row.append(InlineKeyboardButton("🎮 Demo", url=demo_url))
+            if prod["stock"] > 0:
+                action_row.append(InlineKeyboardButton("🚀 Buy", callback_data=f"buy_{prod_id}"))
+            else:
+                action_row.append(InlineKeyboardButton("❌ Out of Stock", callback_data="noop"))
 
         await query.message.edit_text(
             text,
@@ -2171,7 +2194,27 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.message.edit_text(
             build_admin_prod_detail_text(prod),
             parse_mode="HTML",
-            reply_markup=admin_prod_edit_keyboard(prod_id, prod["category_id"]),
+            reply_markup=admin_prod_edit_keyboard(prod_id, prod["category_id"], prod.get("display_format", "regular")),
+        )
+        return
+
+    # ── Toggle display format (membership ↔ regular) ──
+    if data.startswith("admin_editprod_format_"):
+        prod_id = int(data.split("_")[3])
+        prod = await db.get_product(prod_id)
+        if not prod:
+            await query.answer("Product not found.", show_alert=True)
+            return
+        current_fmt = prod.get("display_format") or "regular"
+        new_fmt = "membership" if current_fmt == "regular" else "regular"
+        await db.update_product(prod_id, display_format=new_fmt)
+        prod = await db.get_product(prod_id)
+        label = "🎫 Membership Card" if new_fmt == "membership" else "📦 Regular"
+        await query.answer(f"✅ Format set to {label}")
+        await query.message.edit_text(
+            build_admin_prod_detail_text(prod),
+            parse_mode="HTML",
+            reply_markup=admin_prod_edit_keyboard(prod_id, prod["category_id"], new_fmt),
         )
         return
 

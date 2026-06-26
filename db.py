@@ -149,6 +149,7 @@ async def add_product(
     demo_url: str = "",
     delivery_url: str = "",
     type: str = "",
+    display_format: str = "regular",
 ) -> int:
     c = _client()
     res = c.table(PRODUCTS_TABLE).insert({
@@ -162,7 +163,8 @@ async def add_product(
         "delivery":     delivery,
         "demo_url":     demo_url,
         "delivery_url": delivery_url,
-        "type": type,
+        "type":         type,
+        "display_format": display_format,
     }).execute()
     return res.data[0]["id"]
 
