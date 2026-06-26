@@ -367,6 +367,7 @@ def build_admin_prod_detail_text(prod: dict) -> str:
     desc = (prod.get("description") or "—").strip()
     return (
         f"📦 <b>#{prod['id']} {prod['name']}</b>\n\n"
+        f"🏷 <b>Type:</b> {prod.get('type') or '—'}\n"
         f"💲 <b>Price:</b> ${prod['price']:.2f}\n"
         f"📦 <b>Stock:</b> {stock_icon} {prod['stock']}x\n"
         f"⏳ <b>Duration:</b> {prod.get('duration') or '—'}\n"
@@ -399,6 +400,7 @@ def admin_prod_edit_keyboard(prod_id: int, cat_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("🔗 Delivery URL", callback_data=f"admin_editprod_deliveryurl_{prod_id}"),
         ],
         [InlineKeyboardButton("🔗 Bot Link", callback_data=f"admin_editprod_botlink_{prod_id}")],
+        [InlineKeyboardButton("🏷 Type", callback_data=f"admin_editprod_type_{prod_id}")],
         [InlineKeyboardButton("🗑 Delete Product",  callback_data=f"admin_delprod_{prod_id}")],
         [InlineKeyboardButton("⬅️ Back",            callback_data=f"admin_prodcat_{cat_id}")],
     ])
@@ -886,6 +888,16 @@ async def _process_admin_input(update: Update, context: ContextTypes.DEFAULT_TYP
 
     elif awaiting == "prod_delivery":
         ud["new_prod_delivery"] = text.strip()
+        ud["awaiting"] = "prod_type"
+        await db.set_session(user_id, ud)
+        await update.message.reply_text(
+            "Enter the <b>product type</b> (e.g. <code>TG Bot Source Code</code>, <code>Web Source Code</code>, <code>APK Source Code</code>).\n\nSend <code>-</code> to skip:",
+            parse_mode="HTML",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+
+    elif awaiting == "prod_type":
+        ud["new_prod_type"] = "" if text.strip() == "-" else text.strip()
         ud["awaiting"] = "prod_demo_url"
         await db.set_session(user_id, ud)
         await update.message.reply_text(
@@ -896,6 +908,7 @@ async def _process_admin_input(update: Update, context: ContextTypes.DEFAULT_TYP
 
     elif awaiting == "prod_demo_url":
         cat_id   = ud.pop("new_prod_cat_id", None)
+        type     = ud.pop("new_prod_type", "")
         name     = ud.pop("new_prod_name", None)
         desc     = ud.pop("new_prod_desc", None)
         price    = ud.pop("new_prod_price", None)
@@ -906,7 +919,7 @@ async def _process_admin_input(update: Update, context: ContextTypes.DEFAULT_TYP
         demo_url = "" if text.strip() == "-" else text.strip()
         ud.pop("awaiting", None)
         await db.set_session(user_id, ud)
-        await db.add_product(cat_id, name, desc, price, stock, duration, warranty, delivery, demo_url)
+        await db.add_product(cat_id, name, desc, price, stock, duration, warranty, delivery, demo_url, type=type)
         cat = await db.get_category(cat_id)
         cat_name = f"{cat['emoji']} {cat['name']}" if cat else "category"
         await update.message.reply_text(
@@ -918,7 +931,8 @@ async def _process_admin_input(update: Update, context: ContextTypes.DEFAULT_TYP
 
     elif awaiting in ("prod_edit_name", "prod_edit_price", "prod_edit_desc",
                     "prod_edit_stock", "prod_edit_duration", "prod_edit_warranty",
-                    "prod_edit_delivery", "prod_edit_demo", "prod_edit_deliveryurl"):
+                    "prod_edit_delivery", "prod_edit_demo", "prod_edit_deliveryurl",
+                    "prod_edit_type"):
         prod_id = ud.pop("edit_prod_id", None)
         ud.pop("awaiting", None)
         await db.set_session(user_id, ud)
@@ -935,7 +949,8 @@ async def _process_admin_input(update: Update, context: ContextTypes.DEFAULT_TYP
             "prod_edit_warranty": ("warranty",    lambda v: v),
             "prod_edit_delivery": ("delivery",    lambda v: v),
             "prod_edit_demo":     ("demo_url",    lambda v: "" if v == "-" else v),
-            "prod_edit_deliveryurl": ("delivery_url", lambda v: "" if v == "-" else v),  # ← new
+            "prod_edit_deliveryurl": ("delivery_url", lambda v: "" if v == "-" else v),
+            "prod_edit_type": ("type", lambda v: v),
         }
         db_field, converter = field_db_map[awaiting]
         try:
@@ -1793,12 +1808,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         warranty = prod.get("warranty") or "No warranty"
         delivery = prod.get("delivery") or "LINK"
         desc     = (prod.get("description") or "").strip()
+        prod_type = prod.get("type") or ""
         text = (
             f"📦 <b>{prod['name']}</b>\n\n"
             f"💰 <b>{price:.2f}</b> USD\n"
-            f"⏳ Duration: {duration}\n"
-            f"🛡 Warranty: {warranty}\n"
-            f"📦 Delivery: {delivery}\n"
+            f"⏳ <b>Duration:</b> {duration}\n"
+            f"🛡 <b>Warranty:</b> {warranty}\n"
+            + (f"🏷 Type: {prod_type}\n" if prod_type else "")
+            +f"📦 <b>Delivery:</b> {delivery}\n"
         )
         if desc:
             text += f"\n{desc}\n"
@@ -2177,6 +2194,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "delivery": ("prod_edit_delivery", "📬 Enter a new <b>delivery type</b> (e.g. <code>LINK</code>, <code>ACCOUNT</code>):"),
             "demo":     ("prod_edit_demo",     "🎮 Enter a new <b>demo URL</b>. Send <code>-</code> to clear:"),
             "deliveryurl": ("prod_edit_deliveryurl", "🔗 Enter the <b>delivery URL</b> users receive after purchase. Send <code>-</code> to clear:"),
+            "type": ("prod_edit_type", "🏷 Enter the <b>product type</b> (e.g. <code>TG Bot Source Code</code>). Send <code>-</code> to clear:"),
         }
         if field not in field_map:
             await query.answer()
