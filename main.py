@@ -1147,13 +1147,121 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     data = query.data
     user_id = update.effective_user.id
 
-    ban_routed, gcash_routed, subs_routed, avail_routed = await asyncio.gather(
-        ban_manager.route_callback(update, context),
-        pending_gcash.route_callback(update, context),
-        official_subscriptions.route_callback(update, context),
-        whats_available.route_callback(update, context),
-    )
-    if ban_routed or gcash_routed or subs_routed or avail_routed:
+    # ── Fast-path routing — only call submodule when prefix matches ──
+    if (data == ban_manager.CB_BAN_START
+            or data == ban_manager.CB_BAN_BACK
+            or data.startswith(ban_manager.CB_BAN_CONFIRM)
+            or data.startswith(ban_manager.CB_UNBAN_CONFIRM)):
+        await ban_manager.route_callback(update, context)
+        return
+
+    if data in (pending_gcash.CB_PENDING_LIST,
+                pending_gcash.CB_PENDING_REFRESH,
+                pending_gcash.CB_PENDING_BACK):
+        await pending_gcash.route_callback(update, context)
+        return
+
+    if data.startswith("admin_approve_gcash_"):
+        parts = data.split("_")
+        target_user_id = int(parts[3])
+        amount_php = float(parts[4])
+
+        rate = await db.get_php_usd_rate()
+        amount_usd = round(amount_php / rate, 2)
+
+        await db.credit_balance(target_user_id, amount_php, rate=rate)
+        await pending_gcash.clear_pending(target_user_id)
+        await query.answer("✅ Balance credited!", show_alert=True)
+
+        # Get existing plain-text caption and replace the status line
+        try:
+            original = query.message.caption or ""
+            # Replace the plain text status line (no HTML tags in caption property)
+            updated_caption = original.replace(
+                "Status: PENDING VERIFICATION",
+                "Status: ✅ APPROVED"
+            )
+            await query.message.edit_caption(
+                caption=updated_caption,
+                parse_mode=None,  # ← plain text, no HTML since caption is already plain
+                reply_markup=None,
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit admin message: {e}")
+
+        # Notify user
+        try:
+            await context.bot.send_message(
+                chat_id=target_user_id,
+                text=(
+                    f"🤑 <b>New Credits Added!</b>\n\n"
+                    f"<blockquote>"
+                    f"👤 <b>User:</b> <code>{mask_user_id(target_user_id)}</code>\n"
+                    f"💵 <b>Amount:</b> ${amount_usd:.2f} (₱{amount_php:.2f})\n"
+                    f"💳 <b>Method:</b> GCash Deposit 🇵🇭"
+                    f"</blockquote>"
+                ),
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify user {target_user_id}: {e}")
+
+        # Notify channel
+        if CHANNEL_ID:
+            try:
+                await context.bot.send_message(
+                    chat_id=CHANNEL_ID,
+                    text=(
+                        f"🤑 <b>New Credits Added!</b>\n\n"
+                        f"<blockquote>"
+                        f"👤 <b>User:</b> <code>{mask_user_id(target_user_id)}</code>\n"
+                        f"💵 <b>Amount:</b> 🤑\n"
+                        f"💳 <b>Method:</b> GCash Deposit 🇵🇭"
+                        f"</blockquote>"
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify channel: {e}")
+        return
+
+    if data.startswith("admin_reject_gcash_"):
+        target_user_id = int(data.split("_")[3])
+        await pending_gcash.clear_pending(target_user_id)
+        await query.answer("❌ Claim rejected.", show_alert=True)
+
+        # Rebuild caption with updated status line, remove all buttons
+        try:
+            original = query.message.caption or ""
+            updated_caption = original.replace(
+                "Status: PENDING VERIFICATION",
+                "Status: ❌ REJECTED"
+            )
+            await query.message.edit_caption(
+                caption=updated_caption,
+                parse_mode=None,  # ← plain text
+                reply_markup=None,
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit admin message: {e}")
+
+        # Notify user
+        try:
+            await context.bot.send_message(
+                chat_id=target_user_id,
+                text="❌ <b>Deposit not verified.</b>\n\nWe could not verify your GCash payment. Please contact support if you believe this is an error.",
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify user {target_user_id}: {e}")
+        return
+
+    if data == "official_subs":
+        await official_subscriptions.route_callback(update, context)
+        return
+
+    if data == "whats_available":
+        await whats_available.route_callback(update, context)
         return
 
     if data.startswith(invite_center.CAPTCHA_CB_PREFIX):
@@ -1455,6 +1563,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     # ── Profile ──
     if data == "profile_status":
+        await query.answer()
         db_user = await db.get_user(user_id)
         total_spent = float(db_user.get("total_spent", 0.0)) if db_user else 0.0
         current = db.get_status_tier(total_spent)
@@ -1482,7 +1591,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"Progress to the next level:\n"
             f"{progress_text}"
         )
-        await query.answer()
         await query.message.edit_text(
             text,
             parse_mode="HTML",
@@ -1497,6 +1605,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     if data == "status_all_levels":
+        await query.answer()
         lines = ["🗂 <b>All statuses</b>\n\n"
                  "Statuses are based on your net purchase turnover excluding "
                  "refunds.\n"]
@@ -1509,7 +1618,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 f"{icon} <b>{tier['name']}</b> — from <b>${tier['min']:.2f}</b>\n"
                 f"  Bonus: <b>{tier['discount']}%</b> product discount\n"
             )
-        await query.answer()
         await query.message.edit_text(
             "\n".join(lines),
             parse_mode="HTML",
@@ -1524,8 +1632,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     if data == "profile_back":
-        db_user = await db.get_user(user_id)
         await query.answer()
+        db_user = await db.get_user(user_id)
         await query.message.edit_text(
             build_profile_text(update.effective_user, db_user),
             parse_mode="HTML",
@@ -1534,10 +1642,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     if data == "profile_wallet":
-        db_user = await db.get_user(user_id)
+        await query.answer()
+        db_user, transactions = await asyncio.gather(  # ← also parallelize these two
+            db.get_user(user_id),
+            db.get_transactions(user_id, limit=10),
+        )
         balance = float(db_user.get("balance", 0.0)) if db_user else 0.0
-        transactions = await db.get_transactions(user_id, limit=10)
-
         lines = [f"🏦 <b>Wallet Statement</b>\n\n💰 Current balance: <b>${balance:.2f}</b>\n\n"]
 
         if not transactions:
@@ -1564,7 +1674,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         lines.append("\n<i>Showing last 10 transactions.</i>")
 
-        await query.answer()
         await query.message.edit_text(
             "\n".join(lines),
             parse_mode="HTML",
@@ -1575,6 +1684,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     if data == "profile_orders":
+        await query.answer()
         transactions = await db.get_purchase_transactions(user_id, limit=20)
 
         if not transactions:
@@ -1606,7 +1716,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
         lines.append("<i>Showing last 20 orders.</i>")
 
-        await query.answer()
         await query.message.edit_text(
             "\n".join(lines),
             parse_mode="HTML",
@@ -1626,21 +1735,21 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     if data == "back_to_products":
-        kb = await build_products_keyboard()
         await query.answer()
+        kb = await build_products_keyboard()
         await query.message.edit_text("<b>Choose a service:</b>", parse_mode="HTML", reply_markup=kb)
         return
 
     NUM_EMOJIS = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
 
     if data.startswith("cat_"):
+        await query.answer()
         cat_id = int(data.split("_")[1])
         cat = await db.get_category(cat_id)
         products = await db.get_products(cat_id)
         cat_emoji = cat["emoji"] if cat else "📦"
         cat_name  = cat["name"]  if cat else "Category"
         if not products:
-            await query.answer()
             await query.message.edit_text(
                 f"{cat_emoji} <b>{cat_name}</b>\n\n⚠️ No products available in this category yet.",
                 parse_mode="HTML",
@@ -1657,7 +1766,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             for p in products
         ]
         product_buttons.append([InlineKeyboardButton("⬅️ Back to services", callback_data="back_to_products")])
-        await query.answer()
         await query.message.edit_text(
             f"{cat_emoji} Choose your <b>{cat_name}</b> plan:",
             parse_mode="HTML",
@@ -1672,6 +1780,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if not prod:
             await query.answer("Product not found.", show_alert=True)
             return
+        await query.answer()
         cat = await db.get_category(prod["category_id"])
         cat_emoji = cat["emoji"] if cat else "📦"
         price    = prod["price"]
@@ -1688,7 +1797,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         if desc:
             text += f"\n{desc}\n"
-        await query.answer()
         # Build the button row — Demo beside Buy only when a URL exists
         demo_url = (prod.get("demo_url") or "").strip()
         action_row = []
@@ -2224,101 +2332,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             parse_mode="HTML",
             reply_markup=ReplyKeyboardRemove(),
         )
-        return
-
-    if data.startswith("admin_approve_gcash_"):
-        parts = data.split("_")
-        target_user_id = int(parts[3])
-        amount_php = float(parts[4])
-
-        rate = await db.get_php_usd_rate()
-        amount_usd = round(amount_php / rate, 2)
-
-        await db.credit_balance(target_user_id, amount_php, rate=rate)
-        await pending_gcash.clear_pending(target_user_id)
-        await query.answer("✅ Balance credited!", show_alert=True)
-
-        # Get existing plain-text caption and replace the status line
-        try:
-            original = query.message.caption or ""
-            # Replace the plain text status line (no HTML tags in caption property)
-            updated_caption = original.replace(
-                "Status: PENDING VERIFICATION",
-                "Status: ✅ APPROVED"
-            )
-            await query.message.edit_caption(
-                caption=updated_caption,
-                parse_mode=None,  # ← plain text, no HTML since caption is already plain
-                reply_markup=None,
-            )
-        except Exception as e:
-            logger.warning(f"Could not edit admin message: {e}")
-
-        # Notify user
-        try:
-            await context.bot.send_message(
-                chat_id=target_user_id,
-                text=(
-                    f"🤑 <b>New Credits Added!</b>\n\n"
-                    f"<blockquote>"
-                    f"👤 <b>User:</b> <code>{mask_user_id(target_user_id)}</code>\n"
-                    f"💵 <b>Amount:</b> ${amount_usd:.2f} (₱{amount_php:.2f})\n"
-                    f"💳 <b>Method:</b> GCash Deposit 🇵🇭"
-                    f"</blockquote>"
-                ),
-                parse_mode="HTML",
-            )
-        except Exception as e:
-            logger.error(f"Failed to notify user {target_user_id}: {e}")
-
-        # Notify channel
-        if CHANNEL_ID:
-            try:
-                await context.bot.send_message(
-                    chat_id=CHANNEL_ID,
-                    text=(
-                        f"🤑 <b>New Credits Added!</b>\n\n"
-                        f"<blockquote>"
-                        f"👤 <b>User:</b> <code>{mask_user_id(target_user_id)}</code>\n"
-                        f"💵 <b>Amount:</b> 🤑\n"
-                        f"💳 <b>Method:</b> GCash Deposit 🇵🇭"
-                        f"</blockquote>"
-                    ),
-                    parse_mode="HTML",
-                )
-            except Exception as e:
-                logger.error(f"Failed to notify channel: {e}")
-        return
-
-    if data.startswith("admin_reject_gcash_"):
-        target_user_id = int(data.split("_")[3])
-        await pending_gcash.clear_pending(target_user_id)
-        await query.answer("❌ Claim rejected.", show_alert=True)
-
-        # Rebuild caption with updated status line, remove all buttons
-        try:
-            original = query.message.caption or ""
-            updated_caption = original.replace(
-                "Status: PENDING VERIFICATION",
-                "Status: ❌ REJECTED"
-            )
-            await query.message.edit_caption(
-                caption=updated_caption,
-                parse_mode=None,  # ← plain text
-                reply_markup=None,
-            )
-        except Exception as e:
-            logger.warning(f"Could not edit admin message: {e}")
-
-        # Notify user
-        try:
-            await context.bot.send_message(
-                chat_id=target_user_id,
-                text="❌ <b>Deposit not verified.</b>\n\nWe could not verify your GCash payment. Please contact support if you believe this is an error.",
-                parse_mode="HTML",
-            )
-        except Exception as e:
-            logger.error(f"Failed to notify user {target_user_id}: {e}")
         return
 
     # Unhandled callback
