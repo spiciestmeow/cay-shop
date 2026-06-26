@@ -1811,11 +1811,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         prod_type = prod.get("type") or ""
         text = (
             f"📦 <b>{prod['name']}</b>\n\n"
-            f"💰 <b>{price:.2f}</b> USD\n"
-            f"⏳ <b>Duration:</b> {duration}\n"
-            f"🛡 <b>Warranty:</b> {warranty}\n"
-            + (f"🏷 Type: {prod_type}\n" if prod_type else "")
-            +f"📦 <b>Delivery:</b> {delivery}\n"
+            f"💰 <b>{price:.2f}</b> <code>USD</code>\n"
+            f"⏳ <b>Duration:</b> <code>{duration}</code>\n"
+            f"🛡 <b>Warranty:</b> <code>{warranty}</code>\n"
+            + (f"🏷 <b>Type:</b> <code>{prod_type}</code>\n" if prod_type else "")
+            +f"📦 <b>Delivery:</b> <code>{delivery}</code>\n"
         )
         if desc:
             text += f"\n{desc}\n"
