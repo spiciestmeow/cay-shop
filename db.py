@@ -300,25 +300,22 @@ async def record_purchase(user_id: int, amount_usd: float, product_name: str = "
     row = res.data[0]
     current_balance = float(row.get("balance") or 0)
     new_balance = round(current_balance - amount_usd, 2)
+    new_spent     = round(float(row.get("total_spent") or 0) + amount_usd, 2)
+    new_purchases = int(row.get("total_purchases") or 0) + qty
 
+    updates = {
+        "balance":         new_balance,
+        "total_spent":     new_spent,
+        "total_purchases": new_purchases,
+    }
     if is_admin_purchase:
-        new_admin_total = int(row.get("admin_total_purchases") or 0) + 1
-        c.table(USERS_TABLE).update({
-            "balance": new_balance,
-            "admin_total_purchases": new_admin_total,
-        }).eq("user_id", user_id).execute()
-    else:
-        new_spent     = round(float(row.get("total_spent") or 0) + amount_usd, 2)
-        new_purchases = int(row.get("total_purchases") or 0) + qty
-        c.table(USERS_TABLE).update({
-            "balance":         new_balance,
-            "total_spent":     new_spent,
-            "total_purchases": new_purchases,
-        }).eq("user_id", user_id).execute()
+        updates["admin_total_purchases"] = int(row.get("admin_total_purchases") or 0) + 1
+
+    c.table(USERS_TABLE).update(updates).eq("user_id", user_id).execute()
 
     await add_transaction(
         user_id=user_id,
-        type="deposit" if is_admin_purchase else "purchase",
+        type="purchase",
         amount_usd=amount_usd,
         description=f"{'[ADMIN TEST] ' if is_admin_purchase else ''}Purchase: {product_name}",
         order_no=order_no,

@@ -1927,7 +1927,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await context.bot.send_message(chat_id=admin_id, text=admin_msg, parse_mode="HTML")
             except Exception:
                 pass
-        if CHANNEL_ID:
+        if CHANNEL_ID and not is_admin(user_id):
             try:
                 await context.bot.send_message(chat_id=CHANNEL_ID, text=admin_msg, parse_mode="HTML")
             except Exception:
