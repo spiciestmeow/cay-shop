@@ -1662,8 +1662,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if not prod:
             await query.answer("Product not found.", show_alert=True)
             return
-        if prod["stock"] < qty:
-            await query.answer(f"❌ Only {prod['stock']} in stock.", show_alert=True)
+        if prod["stock"] <= 0:
+            await query.answer("❌ This product is out of stock.", show_alert=True)
             return
         db_user = await db.get_user(user_id)
         balance = float(db_user.get("balance", 0)) if db_user else 0.0
@@ -1781,43 +1781,30 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if not prod:
             await query.answer("Product not found.", show_alert=True)
             return
-        if prod["stock"] <= 0:
-            await query.answer("❌ Out of stock.", show_alert=True)
+        if prod["stock"] < qty:
+            await query.answer(f"❌ Only {prod['stock']} in stock.", show_alert=True)
             return
         db_user = await db.get_user(user_id)
         balance = float(db_user.get("balance", 0)) if db_user else 0.0
         price = prod["price"]
-        if balance < final_price:
-            await query.answer("❌ Insufficient balance.", show_alert=True)
-            return
-
         delivery_url = (prod.get("delivery_url") or "").strip()
         if not delivery_url:
             await query.answer("⚠️ No delivery URL. Contact support.", show_alert=True)
             return
-
         # Apply tier discount
         tier = db.get_status_tier(float(db_user.get("total_spent", 0)))
         discount_pct = tier["discount"]
         final_unit = round(price * (1 - discount_pct / 100), 2)
-        final_price = round(final_unit * qty, 2)   # ← was just final_unit * 1
-
+        final_price = round(final_unit * qty, 2)
         if balance < final_price:
             await query.answer("❌ Insufficient balance.", show_alert=True)
             return
-
-        if prod["stock"] < qty:
-            await query.answer(f"❌ Only {prod['stock']} in stock.", show_alert=True)
-            return
-
         # ── Process the purchase ──
         await db.record_purchase(user_id, final_price, product_name=prod['name'], is_admin_purchase=is_admin(user_id))
-        await db.update_product_stock(prod_id, prod["stock"] - qty)   # ← deduct qty not 1
-
+        await db.update_product_stock(prod_id, prod["stock"] - qty)
         await query.answer("✅ Purchase successful!", show_alert=True)
         import random, string
         order_no = 'LNK' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=11))
-
         await query.message.edit_text(
             f"✅ <b>Purchase Successful!</b>\n\n"
             f"📦 <b>{prod['name']}</b> × {qty}\n"
@@ -1836,12 +1823,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 [InlineKeyboardButton("👤 My Profile", callback_data="profile_back")],
             ]),
         )
-
-        # ── Process order number and total purchases ──
         cat = await db.get_category(prod["category_id"])
- 
         db_user_fresh = await db.get_user(user_id)
- 
         if is_admin(user_id):
             admin_total = int(db_user_fresh.get("admin_total_purchases", 0)) if db_user_fresh else 0
             admin_msg = (
@@ -1856,7 +1839,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 f"</blockquote>"
             )
         else:
-            # Real user purchase — use user's total_purchases
             total_purchases = int(db_user_fresh.get("total_purchases", 1)) if db_user_fresh else 1
             admin_msg = (
                 f"<blockquote>"
@@ -1869,25 +1851,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 f"📊 <b>Total Purchase!:</b> {total_purchases}"
                 f"</blockquote>"
             )
-
-        # Always notify admins
         for admin_id in ADMIN_IDS:
             try:
                 await context.bot.send_message(chat_id=admin_id, text=admin_msg, parse_mode="HTML")
             except Exception:
                 pass
-
-        # Always notify channel
         if CHANNEL_ID:
             try:
-                await context.bot.send_message(
-                    chat_id=CHANNEL_ID,
-                    text=admin_msg,
-                    parse_mode="HTML",
-                )
+                await context.bot.send_message(chat_id=CHANNEL_ID, text=admin_msg, parse_mode="HTML")
             except Exception:
                 pass
         return
+
 
     if data == "topup_from_buy":
         await query.answer()
