@@ -330,11 +330,17 @@ def admin_cat_edit_keyboard(cat_id: int, cat_type: str = "regular") -> InlineKey
 
 async def admin_products_pick_cat_keyboard() -> InlineKeyboardMarkup:
     cats = await db.get_categories()
+    # ONE query for all products instead of one per category
+    all_products = await db.get_all_products_flat()
+    products_by_cat: dict[int, list] = {}
+    for p in all_products:
+        products_by_cat.setdefault(p["category_id"], []).append(p)
+
     rows = []
     for cat in cats:
-        products = await db.get_products(cat["id"])
-        total = len(products)
-        in_stock = sum(1 for p in products if p["stock"] > 0)
+        prods = products_by_cat.get(cat["id"], [])
+        total = len(prods)
+        in_stock = sum(1 for p in prods if p["stock"] > 0)
         stock_icon = "✅" if in_stock > 0 else "❌"
         rows.append([InlineKeyboardButton(
             f"{cat['emoji']} {cat['name']}  {stock_icon} {in_stock}/{total}",
@@ -344,17 +350,18 @@ async def admin_products_pick_cat_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 async def admin_products_keyboard(cat_id: int):
-    products = await db.get_products(cat_id)
-    cat = await db.get_category(cat_id)
+    # BEFORE: two sequential awaits
+    products, cat = await asyncio.gather(
+        db.get_products(cat_id),
+        db.get_category(cat_id),
+    )
     rows = []
     for p in products:
         stock_icon = "✅" if p["stock"] > 0 else "❌"
-        rows.append([
-            InlineKeyboardButton(
-                f"{stock_icon} #{p['id']} {p['name']} (${p['price']:.2f}, {p['stock']}x)",
-                callback_data=f"admin_prod_{p['id']}"
-            ),
-        ])
+        rows.append([InlineKeyboardButton(
+            f"{stock_icon} #{p['id']} {p['name']} (${p['price']:.2f}, {p['stock']}x)",
+            callback_data=f"admin_prod_{p['id']}"
+        )])
     rows.append([InlineKeyboardButton("➕ Add Product", callback_data=f"admin_addprod_{cat_id}")])
     rows.append([InlineKeyboardButton("⬅️ Back", callback_data="admin_products")])
     cat_name = f"{cat['emoji']} {cat['name']}" if cat else "Category"

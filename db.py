@@ -1,6 +1,8 @@
 import os
 import random
 import string
+import asyncio
+import time
 
 from supabase import create_client, Client
 
@@ -44,6 +46,26 @@ def get_lang(context) -> str:
     """Fast sync check — use when you're sure lang was already set."""
     return context.user_data.get("lang", "en")
 
+async def _run(query) -> any:
+    """Run a synchronous supabase query in a thread so it doesn't block the event loop."""
+    return await asyncio.to_thread(query.execute)
+
+_cache: dict[str, tuple[any, float]] = {}
+CACHE_TTL = 30.0
+
+def _cache_get(key: str) -> any:
+    entry = _cache.get(key)
+    if entry and (time.monotonic() - entry[1]) < CACHE_TTL:
+        return entry[0]
+    return None
+
+def _cache_set(key: str, value: any) -> None:
+    _cache[key] = (value, time.monotonic())
+
+def _cache_del(*keys: str) -> None:
+    for k in keys:
+        _cache.pop(k, None)
+
 async def get_lang_db(user_id: int, context) -> str:
     """
     Use this everywhere in handlers.
@@ -62,18 +84,23 @@ async def get_lang_db(user_id: int, context) -> str:
 async def save_user_lang(user_id: int, lang_code: str) -> None:
     """Save chosen language to the users table so it survives restarts."""
     c = _client()
-    c.table(USERS_TABLE).update({"lang": lang_code}).eq("user_id", user_id).execute()
+    await _run(c.table(USERS_TABLE).update({"lang": lang_code}).eq("user_id", user_id))
 
 async def get_setting(key: str) -> str | None:
-    """Return the raw string value for a settings key, or None."""
+    cached = _cache_get(f"setting:{key}")
+    if cached is not None:
+        return cached
     c = _client()
-    res = c.table(SETTINGS_TABLE).select("value").eq("key", key).limit(1).execute()
-    return res.data[0]["value"] if res.data else None
+    res = await _run(c.table(SETTINGS_TABLE).select("value").eq("key", key).limit(1))
+    value = res.data[0]["value"] if res.data else None
+    if value is not None:
+        _cache_set(f"setting:{key}", value)
+    return value
 
 async def set_setting(key: str, value: str) -> None:
-    """Upsert a settings key/value pair."""
     c = _client()
-    c.table(SETTINGS_TABLE).upsert({"key": key, "value": value}).execute()
+    await _run(c.table(SETTINGS_TABLE).upsert({"key": key, "value": value}))
+    _cache_del(f"setting:{key}")
 
 async def get_php_usd_rate() -> float:
     """Return the current PHP→USD exchange rate from the DB."""
@@ -86,102 +113,105 @@ async def get_php_usd_rate() -> float:
 # ─── CATEGORIES ──────────────────────────────────────────────────────────────
 
 async def get_categories() -> list[dict]:
+    cached = _cache_get("categories")
+    if cached is not None:
+        return cached
     c = _client()
-    res = c.table(CATEGORIES_TABLE).select("*").order("position", desc=False).order("id", desc=False).execute()
-    return res.data or []
+    res = await _run(c.table(CATEGORIES_TABLE).select("*").order("position", desc=False).order("id", desc=False))
+    data = res.data or []
+    _cache_set("categories", data)
+    return data
 
 
 async def get_category(cat_id: int) -> dict | None:
     c = _client()
-    res = c.table(CATEGORIES_TABLE).select("*").eq("id", cat_id).limit(1).execute()
+    res = await _run(c.table(CATEGORIES_TABLE).select("*").eq("id", cat_id).limit(1))
     return res.data[0] if res.data else None
 
 
 async def add_category(name: str, emoji: str, type: str = "regular") -> int:
     c = _client()
-    pos_res = c.table(CATEGORIES_TABLE).select("position").order("position", desc=True).limit(1).execute()
+    pos_res = await _run(c.table(CATEGORIES_TABLE).select("position").order("position", desc=True).limit(1))
     next_pos = (pos_res.data[0]["position"] + 1) if pos_res.data else 1
-    res = c.table(CATEGORIES_TABLE).insert({"name": name, "emoji": emoji, "position": next_pos, "type": type}).execute()
+    res = await _run(c.table(CATEGORIES_TABLE).insert({"name": name, "emoji": emoji, "position": next_pos, "type": type}))
+    _cache_del("categories")
     return res.data[0]["id"]
 
 
 async def delete_category(cat_id: int) -> None:
     c = _client()
-    c.table(CATEGORIES_TABLE).delete().eq("id", cat_id).execute()
+    await _run(c.table(CATEGORIES_TABLE).delete().eq("id", cat_id))
+    _cache_del("categories")
 
 
 async def update_category(cat_id: int, name: str | None = None, emoji: str | None = None, type: str | None = None) -> None:
     c = _client()
     updates = {}
-    if name is not None:
-        updates["name"] = name
-    if emoji is not None:
-        updates["emoji"] = emoji
-    if type is not None:
-        updates["type"] = type
+    if name  is not None: updates["name"]  = name
+    if emoji is not None: updates["emoji"] = emoji
+    if type  is not None: updates["type"]  = type
     if updates:
-        c.table(CATEGORIES_TABLE).update(updates).eq("id", cat_id).execute()
+        await _run(c.table(CATEGORIES_TABLE).update(updates).eq("id", cat_id))
+        _cache_del("categories")
 
 
 # ─── PRODUCTS ────────────────────────────────────────────────────────────────
 
 async def get_products(cat_id: int) -> list[dict]:
+    cached = _cache_get(f"products:{cat_id}")
+    if cached is not None:
+        return cached
     c = _client()
-    res = c.table(PRODUCTS_TABLE).select("*").eq("category_id", cat_id).order("id").execute()
-    return res.data or []
+    res = await _run(c.table(PRODUCTS_TABLE).select("*").eq("category_id", cat_id).order("id"))
+    data = res.data or []
+    _cache_set(f"products:{cat_id}", data)
+    return data
 
 
 async def get_product(prod_id: int) -> dict | None:
     c = _client()
-    res = c.table(PRODUCTS_TABLE).select("*").eq("id", prod_id).limit(1).execute()
+    query = c.table(PRODUCTS_TABLE).select("*").eq("id", prod_id).limit(1)
+    res = await _run(query)
     return res.data[0] if res.data else None
 
 
-async def add_product(
-    cat_id: int,
-    name: str,
-    description: str,
-    price: float,
-    stock: int,
-    duration: str = "",
-    warranty: str = "No warranty",
-    delivery: str = "LINK",
-    demo_url: str = "",
-    delivery_url: str = "",
-    type: str = "",
-    display_format: str = "regular",
+async def add_product(cat_id: int, name: str, description: str, price: float, stock: int,
+    duration: str = "", warranty: str = "No warranty", delivery: str = "LINK",
+    demo_url: str = "", delivery_url: str = "", type: str = "", display_format: str = "regular",
 ) -> int:
     c = _client()
-    res = c.table(PRODUCTS_TABLE).insert({
-        "category_id":  cat_id,
-        "name":         name,
-        "description":  description,
-        "price":        price,
-        "stock":        stock,
-        "duration":     duration,
-        "warranty":     warranty,
-        "delivery":     delivery,
-        "demo_url":     demo_url,
-        "delivery_url": delivery_url,
-        "type":         type,
-        "display_format": display_format,
-    }).execute()
+    res = await _run(c.table(PRODUCTS_TABLE).insert({
+        "category_id": cat_id, "name": name, "description": description,
+        "price": price, "stock": stock, "duration": duration, "warranty": warranty,
+        "delivery": delivery, "demo_url": demo_url, "delivery_url": delivery_url,
+        "type": type, "display_format": display_format,
+    }))
+    _cache_del(f"products:{cat_id}")
     return res.data[0]["id"]
 
 
 async def update_product_stock(prod_id: int, stock: int) -> None:
     c = _client()
-    c.table(PRODUCTS_TABLE).update({"stock": stock}).eq("id", prod_id).execute()
+    await _run(c.table(PRODUCTS_TABLE).update({"stock": stock}).eq("id", prod_id))
+    _cache_del(*[k for k in _cache if k.startswith("products:")])
+
 
 async def update_product(prod_id: int, **fields) -> None:
     c = _client()
     if fields:
-        c.table(PRODUCTS_TABLE).update(fields).eq("id", prod_id).execute()
+        await _run(c.table(PRODUCTS_TABLE).update(fields).eq("id", prod_id))
+        _cache_del(*[k for k in _cache if k.startswith("products:")])
 
 async def delete_product(prod_id: int) -> None:
     c = _client()
-    c.table(PRODUCTS_TABLE).delete().eq("id", prod_id).execute()
+    await _run(c.table(PRODUCTS_TABLE).delete().eq("id", prod_id))
+    _cache_del(*[k for k in _cache if k.startswith("products:")])
 
+async def get_all_products_flat() -> list[dict]:
+    """Fetch all products in one query — used for admin keyboards."""
+    c = _client()
+    res = await _run(c.table(PRODUCTS_TABLE).select("*").order("id"))
+    return res.data or []
 
 async def get_all_products_availability() -> str:
     categories = await get_categories()
@@ -190,7 +220,7 @@ async def get_all_products_availability() -> str:
 
     # One query for ALL products instead of one per category
     c = _client()
-    all_products_res = c.table(PRODUCTS_TABLE).select("*").order("id").execute()
+    all_products_res = await _run(c.table(PRODUCTS_TABLE).select("*").order("id"))
     all_products = all_products_res.data or []
 
     # Group products by category_id in memory
@@ -222,28 +252,28 @@ async def get_all_products_availability() -> str:
 
 async def get_or_create_user(user_id: int, username: str | None, full_name: str | None) -> dict:
     c = _client()
-    res = c.table(USERS_TABLE).select("*").eq("user_id", user_id).limit(1).execute()
+    res = await _run(c.table(USERS_TABLE).select("*").eq("user_id", user_id).limit(1))
     if res.data:
         return res.data[0]
     from datetime import datetime
     now = datetime.utcnow().isoformat()
-    ins = c.table(USERS_TABLE).insert({
+    ins = await _run(c.table(USERS_TABLE).insert({
         "user_id":   user_id,
         "username":  username,
         "full_name": full_name,
         "joined_at": now,
-    }).execute()
+    }))
     return ins.data[0] if ins.data else {}
 
 async def get_user(user_id: int) -> dict | None:
     c = _client()
-    res = c.table(USERS_TABLE).select("*").eq("user_id", user_id).limit(1).execute()
+    res = await _run(c.table(USERS_TABLE).select("*").eq("user_id", user_id).limit(1))
     return res.data[0] if res.data else None
 
 async def update_user_ban(user_id: int, is_banned: bool) -> None:
     """Set or clear the is_banned flag for a user."""
     c = _client()
-    c.table(USERS_TABLE).update({"is_banned": is_banned}).eq("user_id", user_id).execute()
+    await _run(c.table(USERS_TABLE).update({"is_banned": is_banned}).eq("user_id", user_id))
 
 async def credit_balance(user_id: int, amount_php: float, rate: float = None) -> None:
     if rate is None:
@@ -251,12 +281,12 @@ async def credit_balance(user_id: int, amount_php: float, rate: float = None) ->
     amount_usd = round(amount_php / rate, 2)
 
     c = _client()
-    res = c.table(USERS_TABLE).select("balance").eq("user_id", user_id).limit(1).execute()
+    res = await _run(c.table(USERS_TABLE).select("balance").eq("user_id", user_id).limit(1))
     if not res.data:
         return
     current_balance = float(res.data[0].get("balance") or 0)
     new_balance = round(current_balance + amount_usd, 2)
-    c.table(USERS_TABLE).update({"balance": new_balance}).eq("user_id", user_id).execute()
+    await _run(c.table(USERS_TABLE).update({"balance": new_balance}).eq("user_id", user_id))
 
     await add_transaction(
         user_id=user_id,
@@ -272,7 +302,7 @@ async def credit_balance(user_id: int, amount_php: float, rate: float = None) ->
 
 async def get_session(user_id: int) -> dict:
     c = _client()
-    res = c.table(STATES_TABLE).select("state").eq("user_id", user_id).limit(1).execute()
+    res = await _run(c.table(STATES_TABLE).select("state").eq("user_id", user_id).limit(1))
     if res.data:
         data = res.data[0].get("state")
         return data if isinstance(data, dict) else {}
@@ -281,12 +311,12 @@ async def get_session(user_id: int) -> dict:
 
 async def set_session(user_id: int, state: dict) -> None:
     c = _client()
-    c.table(STATES_TABLE).upsert({"user_id": user_id, "state": state}).execute()
+    await _run(c.table(STATES_TABLE).upsert({"user_id": user_id, "state": state}))
 
 
 async def clear_session(user_id: int) -> None:
     c = _client()
-    c.table(STATES_TABLE).delete().eq("user_id", user_id).execute()
+    await _run(c.table(STATES_TABLE).delete().eq("user_id", user_id))
 
 # ─── STATUS TIERS ────────────────────────────────────────────────────────────
 
@@ -315,7 +345,7 @@ def get_next_tier(total_spent: float) -> dict | None:
 
 async def record_purchase(user_id: int, amount_usd: float, product_name: str = "", is_admin_purchase: bool = False, qty: int = 1, order_no: str = "") -> None:
     c = _client()
-    res = c.table(USERS_TABLE).select("balance, total_spent, total_purchases, admin_total_purchases").eq("user_id", user_id).limit(1).execute()
+    res = await _run(c.table(USERS_TABLE).select("balance, total_spent, total_purchases, admin_total_purchases").eq("user_id", user_id).limit(1))
     if not res.data:
         return
     row = res.data[0]
@@ -332,7 +362,7 @@ async def record_purchase(user_id: int, amount_usd: float, product_name: str = "
     if is_admin_purchase:
         updates["admin_total_purchases"] = int(row.get("admin_total_purchases") or 0) + 1
 
-    c.table(USERS_TABLE).update(updates).eq("user_id", user_id).execute()
+    await _run(c.table(USERS_TABLE).update(updates).eq("user_id", user_id))
 
     await add_transaction(
         user_id=user_id,
@@ -369,18 +399,16 @@ async def add_transaction(
         row["balance_before"] = balance_before
     if balance_after is not None:
         row["balance_after"] = balance_after
-    c.table(TRANSACTIONS_TABLE).insert(row).execute()
+    await _run(c.table(TRANSACTIONS_TABLE).insert(row))
 
 async def get_transactions(user_id: int, limit: int = 10) -> list[dict]:
     c = _client()
-    res = (
+    res = await _run(
         c.table(TRANSACTIONS_TABLE)
         .select("*")
         .eq("user_id", user_id)
         .order("created_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
+        .limit(limit))
     return res.data or []
 
 # ─── REDEEM CODES ────────────────────────────────────────────────────────────
@@ -396,35 +424,35 @@ async def create_redeem_code(amount_usd: float, created_by: int) -> str:
     code = generate_redeem_code()
     while await get_redeem_code(code):
         code = generate_redeem_code()
-    c.table(REDEEM_CODES_TABLE).insert({
+    await _run(c.table(REDEEM_CODES_TABLE).insert({
         "code":       code,
         "amount_usd": amount_usd,
         "created_by": created_by,
-    }).execute()
+    }))
     return code
 
 async def get_redeem_code(code: str) -> dict | None:
     c = _client()
-    res = c.table(REDEEM_CODES_TABLE).select("*").eq("code", code).limit(1).execute()
+    res = await _run(c.table(REDEEM_CODES_TABLE).select("*").eq("code", code).limit(1))
     return res.data[0] if res.data else None
 
 async def mark_redeem_code_used(code: str, user_id: int) -> None:
     from datetime import datetime
     c = _client()
-    c.table(REDEEM_CODES_TABLE).update({
+    await _run(c.table(REDEEM_CODES_TABLE).update({
         "is_used": True,
         "used_by": user_id,
         "used_at": datetime.utcnow().isoformat(),
-    }).eq("code", code).execute()
+    }).eq("code", code))
 
 async def credit_balance_usd(user_id: int, amount_usd: float, description: str = "Redeem code") -> None:
     c = _client()
-    res = c.table(USERS_TABLE).select("balance").eq("user_id", user_id).limit(1).execute()
+    res = await _run(c.table(USERS_TABLE).select("balance").eq("user_id", user_id).limit(1))
     if not res.data:
         return
     current_balance = float(res.data[0].get("balance") or 0)
     new_balance = round(current_balance + amount_usd, 2)
-    c.table(USERS_TABLE).update({"balance": new_balance}).eq("user_id", user_id).execute()
+    await _run(c.table(USERS_TABLE).update({"balance": new_balance}).eq("user_id", user_id))
     await add_transaction(
         user_id=user_id,
         type="deposit",
@@ -436,13 +464,11 @@ async def credit_balance_usd(user_id: int, amount_usd: float, description: str =
 
 async def get_purchase_transactions(user_id: int, limit: int = 20) -> list[dict]:
     c = _client()
-    res = (
+    res = await _run(
         c.table(TRANSACTIONS_TABLE)
         .select("*")
         .eq("user_id", user_id)
         .eq("type", "purchase")
         .order("created_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
+        .limit(limit))
     return res.data or []
