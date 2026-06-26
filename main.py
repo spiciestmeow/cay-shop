@@ -1653,10 +1653,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if not products:
             await query.answer()
             await query.message.edit_text(
-                f"{cat_emoji} <b>{cat_name}</b>\n\n🚫 No products available in this category yet.",
+                f"{cat_emoji} <b>{cat_name}</b>\n\n⚠️ No products available in this category yet.",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("⬅️ Back to services", callback_data="back_to_products")]
+                    [InlineKeyboardButton("Back to services", callback_data="back_to_products")]
                 ]),
             )
             return

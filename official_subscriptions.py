@@ -50,7 +50,7 @@ async def handle_official_subs(
             callback_data=f"cat_{cat['id']}"
         )])
 
-    buttons.append([InlineKeyboardButton("⬅️ Back to services", callback_data="back_to_products")])
+    buttons.append([InlineKeyboardButton("Back to services", callback_data="back_to_products")])
 
     await query.edit_message_text(
         "Choose a product:",
