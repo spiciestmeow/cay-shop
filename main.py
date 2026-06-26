@@ -6,6 +6,7 @@ import invite_center
 import lang
 import logging
 import ban_manager
+import whats_available
 import pending_gcash
 from datetime import datetime
 from telegram import (
@@ -1146,12 +1147,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     data = query.data
     user_id = update.effective_user.id
 
-    ban_routed, gcash_routed, subs_routed = await asyncio.gather(
+    ban_routed, gcash_routed, subs_routed, avail_routed = await asyncio.gather(
         ban_manager.route_callback(update, context),
         pending_gcash.route_callback(update, context),
         official_subscriptions.route_callback(update, context),
+        whats_available.route_callback(update, context),
     )
-    if ban_routed or gcash_routed or subs_routed:
+    if ban_routed or gcash_routed or subs_routed or avail_routed:
         return
 
     if data.startswith(invite_center.CAPTCHA_CB_PREFIX):
@@ -1621,19 +1623,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "profile_withdraw_pro": "📄 Withdraw profile",
         }
         await query.answer(f"{labels[data]} — coming soon", show_alert=True)
-        return
-
-    # ── Products (user) ──
-    if data == "whats_available":
-        text = await db.get_all_products_availability()
-        await query.answer()
-        await query.message.edit_text(
-            text,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Back", callback_data="back_to_products")]
-            ]),
-        )
         return
 
     if data == "back_to_products":

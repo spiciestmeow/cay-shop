@@ -183,9 +183,20 @@ async def get_all_products_availability() -> str:
     categories = await get_categories()
     if not categories:
         return "🗒 <b>What's Available</b>\n\nNo products added yet."
+
+    # One query for ALL products instead of one per category
+    c = _client()
+    all_products_res = c.table(PRODUCTS_TABLE).select("*").order("id").execute()
+    all_products = all_products_res.data or []
+
+    # Group products by category_id in memory
+    products_by_cat: dict[int, list] = {}
+    for p in all_products:
+        products_by_cat.setdefault(p["category_id"], []).append(p)
+
     lines = ["🗒 <b>What's Available</b>\n━━━━━━━━━━━━━━━━━━━━━━━━"]
     for cat in categories:
-        products = await get_products(cat["id"])
+        products = products_by_cat.get(cat["id"], [])
         if not products:
             continue
         lines.append(f"\n{cat['emoji']} <b>{cat['name']}</b>")
@@ -196,6 +207,7 @@ async def get_all_products_availability() -> str:
                 f"<blockquote><b>#{p['id']} {cat['emoji']} {p['name']}</b>\n"
                 f"{stock_icon} {stock_text}</blockquote>"
             )
+
     if len(lines) == 1:
         lines.append("\nNo products added yet.")
     lines.append("\n━━━━━━━━━━━━━━━━━━━━━━━━")
