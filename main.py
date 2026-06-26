@@ -1161,6 +1161,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await pending_gcash.route_callback(update, context)
         return
 
+    # ── Ban gate — must come before ALL user-facing logic ──
+    if data not in ("lang_en", "lang_tl", "gate_check", "close"):
+        if await ban_manager.is_user_banned(user_id):
+            await query.answer("🚫 Your account has been suspended.", show_alert=True)
+            return
+
     if data.startswith("admin_approve_gcash_"):
         parts = data.split("_")
         target_user_id = int(parts[3])
@@ -1326,10 +1332,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.message.reply_text(prompt, reply_markup=ReplyKeyboardRemove())
             return
 
-    if await ban_manager.is_user_banned(user_id):
-        await query.answer("🚫 Your account has been suspended.", show_alert=True)
-        return
-
     if data in ("admin_cattype_regular", "admin_cattype_official"):
         if not is_admin(user_id):
             await query.answer("⛔ Admins only.", show_alert=True)
@@ -1422,7 +1424,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await db.clear_session(user_id)
         await query.answer("Cancelled.")
         await query.message.delete()
-        await query.message.reply_text("❌ Cancelled.", reply_markup=MAIN_MENU)
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="❌ Cancelled.",
+            reply_markup=MAIN_MENU,
+        )
         return
 
     # ── Crypto/Stars top-up — admin only for now. GCash stays open to all users. ──
@@ -1688,7 +1694,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         transactions = await db.get_purchase_transactions(user_id, limit=20)
 
         if not transactions:
-            await query.answer()
             await query.message.edit_text(
                 "📭 <b>You have no orders yet.</b>\n\nPurchase from the Services section ⬇️",
                 parse_mode="HTML",
@@ -2388,7 +2393,6 @@ def main() -> None:
     app.add_handler(CommandHandler("contactadmin", contactadmin_command))
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(CallbackQueryHandler(official_subscriptions.handle_official_subs, pattern="^official_subs$"))
     app.add_handler(MessageHandler(
         filters.PHOTO & ~filters.COMMAND,
         handle_gcash_receipt,

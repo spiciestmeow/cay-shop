@@ -45,7 +45,10 @@ async def handle_ban_input(update: Update, context: ContextTypes.DEFAULT_TYPE, u
         target_id = int(text)
     except ValueError:
         await update.message.reply_text(
-            "❌ Invalid ID. Please send a numeric Telegram user ID:"
+            "❌ Invalid ID. Please send a numeric Telegram user ID:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✕ Cancel", callback_data=CB_BAN_BACK)],
+            ]),
         )
         return True
 
@@ -138,7 +141,7 @@ async def _do_ban(
     query = update.callback_query
 
     try:
-        db._client().table(db.USERS_TABLE).update({"is_banned": ban}).eq("user_id", target_id).execute()
+        await db.update_user_ban(target_id, ban)
     except Exception as e:
         logger.error(f"Failed to {'ban' if ban else 'unban'} user {target_id}: {e}", exc_info=e)
         await query.answer("❌ Database error. Please try again.", show_alert=True)

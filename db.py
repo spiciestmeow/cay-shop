@@ -236,6 +236,11 @@ async def get_user(user_id: int) -> dict | None:
     res = c.table(USERS_TABLE).select("*").eq("user_id", user_id).limit(1).execute()
     return res.data[0] if res.data else None
 
+async def update_user_ban(user_id: int, is_banned: bool) -> None:
+    """Set or clear the is_banned flag for a user."""
+    c = _client()
+    c.table(USERS_TABLE).update({"is_banned": is_banned}).eq("user_id", user_id).execute()
+
 async def credit_balance(user_id: int, amount_php: float, rate: float = None) -> None:
     if rate is None:
         rate = await get_php_usd_rate()
