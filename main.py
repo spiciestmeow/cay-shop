@@ -1820,19 +1820,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if display_format == "membership":
             text = f"{cat_emoji} <b>{prod['name']}</b>\n\n"
             if desc:
-                text += f"{desc}\n\n"
-            text += (
-                f"💰 <b>Price:</b> ${price:.2f} <code>USD</code>\n"
-                f"⏳ <b>Duration:</b> {duration}\n"
-                f"🛡 <b>Warranty:</b> {warranty}\n"
-            )
+                text += desc
             action_row = []
             if demo_url:
                 action_row.append(InlineKeyboardButton("🤖 Access Bot", url=demo_url))
-            if prod["stock"] > 0:
-                action_row.append(InlineKeyboardButton("🚀 Buy", callback_data=f"buy_{prod_id}"))
-            else:
-                action_row.append(InlineKeyboardButton("❌ Out of Stock", callback_data="noop"))
         else:
             text = (
                 f"📦 <b>{prod['name']}</b>\n\n"
