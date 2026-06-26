@@ -52,16 +52,17 @@ async def handle_official_subs(
     for cat in official_cats:
         has_stock = stock_by_cat.get(cat["id"], 0) > 0
         style = "default" if has_stock else "destructive"  # green if stock, red if not
-        btn = InlineKeyboardButton(
+        buttons.append([InlineKeyboardButton(
             f"{cat['emoji']} {cat['name']}",
             callback_data=f"cat_{cat['id']}",
-        )
-        btn.api_kwargs = {"style": style}
-        buttons.append([btn])
+            api_kwargs={"style": "default" if has_stock else "destructive"},
+        )])
 
-    back_btn = InlineKeyboardButton("⬅️ Back to services", callback_data="back_to_products")
-    back_btn.api_kwargs = {"style": "secondary"}  # gray
-    buttons.append([back_btn])
+    buttons.append([InlineKeyboardButton(
+        "⬅️ Back to services",
+        callback_data="back_to_products",
+        api_kwargs={"style": "secondary"},
+    )])
 
     await query.edit_message_text(
         "Choose a product:",

@@ -226,41 +226,40 @@ def build_payment_methods_keyboard() -> InlineKeyboardMarkup:
 
 async def build_products_keyboard() -> InlineKeyboardMarkup:
     categories = await db.get_categories()
-
-    # get stock totals per category
     all_products = await db.get_all_products_flat()
     stock_by_cat: dict[int, int] = {}
     for p in all_products:
         stock_by_cat[p["category_id"]] = stock_by_cat.get(p["category_id"], 0) + p.get("stock", 0)
 
-    # official subs button (always green)
-    official_btn = InlineKeyboardButton("✅ Official Subscriptions", callback_data="official_subs")
-    official_btn.api_kwargs = {"style": "default"}
-    rows = [[official_btn]]
+    rows = [[InlineKeyboardButton(
+        "✅ Official Subscriptions",
+        callback_data="official_subs",
+        api_kwargs={"style": "default"},
+    )]]
 
-    # regular category buttons with color based on stock
     pairs = []
     for cat in categories:
         if cat.get("type", "regular") == "regular":
             has_stock = stock_by_cat.get(cat["id"], 0) > 0
-            btn = InlineKeyboardButton(
+            pairs.append(InlineKeyboardButton(
                 f"{cat['emoji']} {cat['name']}",
-                callback_data=f"cat_{cat['id']}"
-            )
-            btn.api_kwargs = {"style": "default" if has_stock else "destructive"}
-            pairs.append(btn)
+                callback_data=f"cat_{cat['id']}",
+                api_kwargs={"style": "default" if has_stock else "destructive"},
+            ))
 
     for i in range(0, len(pairs), 2):
         rows.append(pairs[i:i + 2])
 
-    # bottom buttons (gray)
-    avail_btn = InlineKeyboardButton("🟢 What's Available", callback_data="whats_available")
-    avail_btn.api_kwargs = {"style": "secondary"}
-    rows.append([avail_btn])
-
-    close_btn = InlineKeyboardButton("✕ Close", callback_data="close")
-    close_btn.api_kwargs = {"style": "secondary"}
-    rows.append([close_btn])
+    rows.append([InlineKeyboardButton(
+        "🟢 What's Available",
+        callback_data="whats_available",
+        api_kwargs={"style": "secondary"},
+    )])
+    rows.append([InlineKeyboardButton(
+        "✕ Close",
+        callback_data="close",
+        api_kwargs={"style": "secondary"},
+    )])
 
     return InlineKeyboardMarkup(rows)
 
