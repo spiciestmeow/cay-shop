@@ -299,6 +299,7 @@ def admin_main_keyboard():
         [InlineKeyboardButton("📋 Edit Bot Policy",       callback_data="admin_edit_policy")],
         [InlineKeyboardButton("🚫 Ban / Unban User",      callback_data="ban_start")],
         [InlineKeyboardButton("💳 Pending GCash",          callback_data="pending_gcash_list")],
+        [InlineKeyboardButton("🇵🇭 GCash Settings", callback_data="admin_gcash_settings")],
         [InlineKeyboardButton("✕ Close", callback_data="close")],
     ])
 
@@ -746,6 +747,22 @@ async def _process_admin_input(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup=build_emoji_picker(),
         )
 
+    elif awaiting in ("gcash_edit_name", "gcash_edit_number", "gcash_edit_qr", "gcash_edit_min", "gcash_edit_max"):
+        setting_key = ud.pop("gcash_setting_key", None)
+        ud.pop("awaiting", None)
+        await db.set_session(user_id, ud)
+        if awaiting in ("gcash_edit_min", "gcash_edit_max"):
+            try:
+                float(text.strip())  # validate it's a number
+            except ValueError:
+                await update.message.reply_text("❌ Invalid number. Please try again:")
+                return
+        await db.set_setting(setting_key, text.strip())
+        await update.message.reply_text(
+            f"✅ GCash setting updated!",
+            reply_markup=MAIN_MENU,
+        )
+
     elif awaiting == "ban_user_id":
         await ban_manager.handle_ban_input(update, context, ud)
         return
@@ -1160,6 +1177,44 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 reply_markup=MAIN_MENU,
             )
         return
+
+    if data == "admin_gcash_settings":
+        cfg = await gcash_topup._get_gcash_config()
+        await query.answer()
+        await query.message.edit_text(
+            f"🇵🇭 <b>GCash Settings</b>\n\n"
+            f"👤 Account Name: <b>{cfg['name']}</b>\n"
+            f"📞 Number: <b>{cfg['number']}</b>\n"
+            f"🖼 QR URL: <code>{cfg['qr']}</code>\n"
+            f"💰 Min: <b>₱{cfg['min_php']:.2f}</b>\n"
+            f"💰 Max: <b>₱{cfg['max_php']:.2f}</b>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("👤 Account Name",  callback_data="admin_gcash_set_name")],
+                [InlineKeyboardButton("📞 Number",        callback_data="admin_gcash_set_number")],
+                [InlineKeyboardButton("🖼 QR Image URL",  callback_data="admin_gcash_set_qr")],
+                [InlineKeyboardButton("💰 Min Amount",    callback_data="admin_gcash_set_min")],
+                [InlineKeyboardButton("💰 Max Amount",    callback_data="admin_gcash_set_max")],
+                [InlineKeyboardButton("⬅️ Back",          callback_data="admin_main")],
+            ]),
+        )
+        return
+
+    # Each edit button sets a session and prompts:
+    GCASH_FIELD_MAP = {
+        "admin_gcash_set_name":   ("gcash_edit_name",   "gcash_account_name", "👤 Enter the new GCash account name:"),
+        "admin_gcash_set_number": ("gcash_edit_number", "gcash_number",       "📞 Enter the new GCash number:"),
+        "admin_gcash_set_qr":     ("gcash_edit_qr",     "gcash_qr_url",       "🖼 Enter the new QR image URL:"),
+        "admin_gcash_set_min":    ("gcash_edit_min",     "gcash_min_php",      "💰 Enter the new minimum PHP amount (e.g. 50):"),
+        "admin_gcash_set_max":    ("gcash_edit_max",     "gcash_max_php",      "💰 Enter the new maximum PHP amount (e.g. 50000):"),
+    }
+
+    for cb_data, (awaiting_key, setting_key, prompt) in GCASH_FIELD_MAP.items():
+        if data == cb_data:
+            await db.set_session(user_id, {"awaiting": awaiting_key, "gcash_setting_key": setting_key})
+            await query.answer()
+            await query.message.reply_text(prompt, reply_markup=ReplyKeyboardRemove())
+            return
 
     if await ban_manager.is_user_banned(user_id):
         await query.answer("🚫 Your account has been suspended.", show_alert=True)
@@ -1803,12 +1858,21 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if balance < final_price:
             await query.answer("❌ Insufficient balance.", show_alert=True)
             return
-        # ── Process the purchase ──
-        await db.record_purchase(user_id, final_price, product_name=prod['name'], is_admin_purchase=is_admin(user_id))
-        await db.update_product_stock(prod_id, prod["stock"] - qty)
-        await query.answer("✅ Purchase successful!", show_alert=True)
+        
         import random, string
         order_no = 'LNK' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=11))
+
+        # ── Process the purchase ──
+        await db.record_purchase(
+            user_id, 
+            final_price, 
+            product_name=prod['name'], 
+            is_admin_purchase=is_admin(user_id), 
+            qty=qty,
+            order_no=order_no,
+        )
+        await db.update_product_stock(prod_id, prod["stock"] - qty)
+        await query.answer("✅ Purchase successful!", show_alert=True)
         await query.message.edit_text(
             f"✅ <b>Purchase Successful!</b>\n\n"
             f"📦 <b>{prod['name']}</b> × {qty}\n"

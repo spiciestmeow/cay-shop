@@ -22,9 +22,6 @@ logger = logging.getLogger(__name__)
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────
 
-GCASH_QR_IMAGE_PATH  = "https://i.ibb.co/CKd4m9GB/photo-2026-06-20-11-02-58.jpg"
-GCASH_ACCOUNT_NAME   = "CL**DE B."
-GCASH_NUMBER         = "9956274340"
 ADMIN_NOTIFY_CHAT_ID = -1004441073113
 
 MENU_BUTTONS = {
@@ -32,14 +29,25 @@ MENU_BUTTONS = {
     "💰 Top up balance", "🎫 Redeem Code", "📋 Bot Policy", "❓ Help",
 }
 
-MIN_AMOUNT_PHP       = 50.0
-MAX_AMOUNT_PHP       = 50_000.0
 EXPIRY_MINUTES       = 15
 EXPIRY_SECONDS_TEST  = 15
 USE_TEST_EXPIRY      = False     # ← flip to False for production
 
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────
+
+async def _get_gcash_config() -> dict:
+    keys = ["gcash_qr_url", "gcash_account_name", "gcash_number", "gcash_min_php", "gcash_max_php"]
+    results = {}
+    for key in keys:
+        results[key] = await db.get_setting(key)
+    return {
+        "qr":      results["gcash_qr_url"]       or "https://i.ibb.co/CKd4m9GB/photo-2026-06-20-11-02-58.jpg",
+        "name":    results["gcash_account_name"]  or "CL**DE B.",
+        "number":  results["gcash_number"]        or "9956274340",
+        "min_php": float(results["gcash_min_php"] or 50.0),
+        "max_php": float(results["gcash_max_php"] or 50_000.0),
+    }
 
 async def _get_rate() -> float:
     """Always fetch the live rate from the DB."""
@@ -64,18 +72,21 @@ def _generate_unique_amount(base_amount: float) -> float:
 async def start_gcash_topup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query   = update.callback_query
     user_id = update.effective_user.id
+    cfg = await _get_gcash_config()
 
     rate    = await _get_rate()
-    min_usd = round(MIN_AMOUNT_PHP / rate, 2)
-    max_usd = round(MAX_AMOUNT_PHP / rate, 2)
+    min_php = cfg["min_php"]
+    max_php = cfg["max_php"] 
+    min_usd = round(cfg["min_php"] / rate, 2)
+    max_usd = round(cfg["max_php"] / rate, 2)
 
     await db.set_session(user_id, {"awaiting": "gcash_amount"})
     await query.answer()
     await query.message.edit_text(
         "<blockquote>🇵🇭 <b>Enter deposit amount</b></blockquote>\n\n"
         f"Network: <b>GCash</b>\n"
-        f"Minimum: <b>{_format_php(MIN_AMOUNT_PHP)}</b> (≈ <b>${min_usd:.2f}</b>)\n"
-        f"Maximum: <b>{_format_php(MAX_AMOUNT_PHP)}</b> (≈ <b>${max_usd:.2f}</b>)\n"
+        f"Minimum: <b>{_format_php(min_php)}</b> (≈ <b>${min_usd:.2f}</b>)\n"
+        f"Maximum: <b>{_format_php(max_php)}</b> (≈ <b>${max_usd:.2f}</b>)\n"
         f"<i>Rate: ₱{rate:.2f} = $1.00</i>\n\n"
         "<i>Send numbers only, e.g. <b>500</b></i>",
         parse_mode="HTML",
@@ -92,6 +103,12 @@ async def handle_gcash_amount_input(
 ) -> None:
     user_id = update.effective_user.id
     text    = (update.message.text or "").strip()
+    cfg = await _get_gcash_config()
+    min_php = cfg["min_php"]
+    max_php = cfg["max_php"]
+    name    = cfg["name"]
+    number  = cfg["number"]
+    qr      = cfg["qr"]
 
     if text in MENU_BUTTONS:
         ud.pop("awaiting", None)
@@ -109,10 +126,10 @@ async def handle_gcash_amount_input(
         )
         return
 
-    if amount < MIN_AMOUNT_PHP or amount > MAX_AMOUNT_PHP:
+    if amount < min_php or amount > max_php:
         await update.message.reply_text(
             f"⚠️ Amount must be between "
-            f"{_format_php(MIN_AMOUNT_PHP)} and {_format_php(MAX_AMOUNT_PHP)}."
+            f"{_format_php(min_php)} and {_format_php(max_php)}."
         )
         return
 
@@ -149,9 +166,9 @@ async def handle_gcash_amount_input(
         f"<pre><code>≈ ${usd_equivalent:.2f}</code></pre>\n"
         f"<i>(Rate: ₱{rate:.2f} = $1.00)</i>\n\n"
         f"📛 <b>Account name:</b>\n"
-        f"<pre><code>{GCASH_ACCOUNT_NAME}</code></pre>\n"
+        f"<pre><code>{name}</code></pre>\n"
         f"📞 <b>GCash number:</b>\n"
-        f"<pre><code>{GCASH_NUMBER}</code></pre>\n\n"
+        f"<pre><code>{number}</code></pre>\n\n"
         "⚠️ <i>Transfer fees may apply depending on your bank/e-wallet.</i>\n\n"
         "<blockquote>🔔 <b>Transfer Fee Notice</b></blockquote>\n\n"
         "• Some banks/e-wallets deduct a small fee when sending via InstaPay.\n"
@@ -174,8 +191,8 @@ async def handle_gcash_amount_input(
 
     sent_message = None
     try:
-        photo        = GCASH_QR_IMAGE_PATH if _is_url(GCASH_QR_IMAGE_PATH) \
-                       else open(GCASH_QR_IMAGE_PATH, "rb")
+        photo        = qr if _is_url(qr) \
+                       else open(qr, "rb")
         sent_message = await update.message.reply_photo(
             photo=photo, caption=caption,
             parse_mode="HTML", reply_markup=keyboard,
@@ -184,7 +201,7 @@ async def handle_gcash_amount_input(
         logger.warning("GCash QR image not found — sending text only.")
         sent_message = await update.message.reply_text(caption, parse_mode="HTML", reply_markup=keyboard)
     except Exception as e:
-        logger.warning(f"GCash QR image failed ({GCASH_QR_IMAGE_PATH}): {e}")
+        logger.warning(f"GCash QR image failed ({qr}): {e}")
         sent_message = await update.message.reply_text(caption, parse_mode="HTML", reply_markup=keyboard)
 
     if sent_message is not None and context.job_queue is not None:

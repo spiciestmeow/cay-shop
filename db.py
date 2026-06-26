@@ -290,7 +290,7 @@ def get_next_tier(total_spent: float) -> dict | None:
             return tier
     return None
 
-async def record_purchase(user_id: int, amount_usd: float, product_name: str = "", is_admin_purchase: bool = False) -> None:
+async def record_purchase(user_id: int, amount_usd: float, product_name: str = "", is_admin_purchase: bool = False, qty: int = 1, order_no: str = "") -> None:
     c = _client()
     res = c.table(USERS_TABLE).select("balance, total_spent, total_purchases, admin_total_purchases").eq("user_id", user_id).limit(1).execute()
     if not res.data:
@@ -306,7 +306,7 @@ async def record_purchase(user_id: int, amount_usd: float, product_name: str = "
         }).eq("user_id", user_id).execute()
     else:
         new_spent     = round(float(row.get("total_spent") or 0) + amount_usd, 2)
-        new_purchases = int(row.get("total_purchases") or 0) + 1
+        new_purchases = int(row.get("total_purchases") or 0) + qty
         c.table(USERS_TABLE).update({
             "balance":         new_balance,
             "total_spent":     new_spent,
@@ -318,6 +318,7 @@ async def record_purchase(user_id: int, amount_usd: float, product_name: str = "
         type="deposit" if is_admin_purchase else "purchase",
         amount_usd=amount_usd,
         description=f"{'[ADMIN TEST] ' if is_admin_purchase else ''}Purchase: {product_name}",
+        order_no=order_no,   # ← add this
     )
 
 async def add_transaction(
