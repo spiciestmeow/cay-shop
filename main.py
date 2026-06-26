@@ -1573,10 +1573,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     if data == "profile_orders":
-        transactions = await db.get_transactions(user_id, limit=20)
-        purchases = [tx for tx in transactions if tx["type"] == "purchase"]
+        transactions = await db.get_purchase_transactions(user_id, limit=20)
 
-        if not purchases:
+        if not transactions:
             await query.answer()
             await query.message.edit_text(
                 "📭 <b>You have no orders yet.</b>\n\nPurchase from the Services section ⬇️",
@@ -1588,15 +1587,19 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
 
         lines = ["📋 <b>My Orders</b>\n"]
-        for tx in purchases:
+        for tx in transactions:
             try:
                 dt = datetime.fromisoformat(tx["created_at"].replace("Z", "+00:00"))
                 date_str = dt.strftime("%m/%d/%Y %H:%M")
             except Exception:
                 date_str = "—"
+
             desc = tx.get("description", "Purchase").replace("Purchase: ", "")
+            order_no = tx.get("order_no") or "—"
+
             lines.append(
                 f"🛒 <b>{desc}</b>\n"
+                f"   🧾 <code>{order_no}</code>\n"
                 f"   💰 ${tx['amount_usd']:.2f} • 📅 {date_str}\n"
             )
         lines.append("<i>Showing last 20 orders.</i>")

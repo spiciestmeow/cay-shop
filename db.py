@@ -243,6 +243,8 @@ async def credit_balance(user_id: int, amount_php: float, rate: float = None) ->
         amount_usd=amount_usd,
         amount_php=amount_php,
         description=f"GCash deposit ₱{amount_php:.2f}",
+        balance_before=current_balance,
+        balance_after=new_balance,  
     )
 
 # ─── SESSION STATE ────────────────────────────────────────────────────────────
@@ -296,7 +298,8 @@ async def record_purchase(user_id: int, amount_usd: float, product_name: str = "
     if not res.data:
         return
     row = res.data[0]
-    new_balance = round(float(row.get("balance") or 0) - amount_usd, 2)
+    current_balance = float(row.get("balance") or 0)
+    new_balance = round(current_balance - amount_usd, 2)
 
     if is_admin_purchase:
         new_admin_total = int(row.get("admin_total_purchases") or 0) + 1
@@ -318,7 +321,9 @@ async def record_purchase(user_id: int, amount_usd: float, product_name: str = "
         type="deposit" if is_admin_purchase else "purchase",
         amount_usd=amount_usd,
         description=f"{'[ADMIN TEST] ' if is_admin_purchase else ''}Purchase: {product_name}",
-        order_no=order_no,   # ← add this
+        order_no=order_no,
+        balance_before=current_balance,
+        balance_after=new_balance,
     )
 
 async def add_transaction(
@@ -328,6 +333,8 @@ async def add_transaction(
     amount_php: float = None,
     description: str = "",
     order_no: str = "",
+    balance_before: float = None,
+    balance_after: float = None,
 ) -> None:
     c = _client()
     row = {
@@ -340,6 +347,10 @@ async def add_transaction(
         row["amount_php"] = amount_php
     if order_no:
         row["order_no"] = order_no
+    if balance_before is not None:
+        row["balance_before"] = balance_before
+    if balance_after is not None:
+        row["balance_after"] = balance_after
     c.table(TRANSACTIONS_TABLE).insert(row).execute()
 
 async def get_transactions(user_id: int, limit: int = 10) -> list[dict]:
@@ -401,4 +412,19 @@ async def credit_balance_usd(user_id: int, amount_usd: float, description: str =
         type="deposit",
         amount_usd=amount_usd,
         description=description,
+        balance_before=current_balance,
+        balance_after=new_balance,
     )
+
+async def get_purchase_transactions(user_id: int, limit: int = 20) -> list[dict]:
+    c = _client()
+    res = (
+        c.table(TRANSACTIONS_TABLE)
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("type", "purchase")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return res.data or []
