@@ -226,32 +226,18 @@ def build_payment_methods_keyboard() -> InlineKeyboardMarkup:
 
 async def build_products_keyboard() -> InlineKeyboardMarkup:
     categories = await db.get_categories()
-    all_products = await db.get_all_products_flat()
-    stock_by_cat: dict[int, int] = {}
-    for p in all_products:
-        stock_by_cat[p["category_id"]] = stock_by_cat.get(p["category_id"], 0) + p.get("stock", 0)
-
-    rows = [[InlineKeyboardButton(
-        "✅ Official Subscriptions",
-        callback_data="official_subs",
-    )]]
-
+    rows = [[InlineKeyboardButton("✅ Official Subscriptions", callback_data="official_subs")]]
     pairs = []
     for cat in categories:
         if cat.get("type", "regular") == "regular":
-            has_stock = stock_by_cat.get(cat["id"], 0) > 0
-            label = f"{cat['emoji']} {cat['name']}" if has_stock else f"❌ {cat['name']}"
             pairs.append(InlineKeyboardButton(
-                label,
-                callback_data=f"cat_{cat['id']}",
+                f"{cat['emoji']} {cat['name']}",
+                callback_data=f"cat_{cat['id']}"
             ))
-
     for i in range(0, len(pairs), 2):
         rows.append(pairs[i:i + 2])
-
     rows.append([InlineKeyboardButton("🟢 What's Available", callback_data="whats_available")])
     rows.append([InlineKeyboardButton("✕ Close", callback_data="close")])
-
     return InlineKeyboardMarkup(rows)
 
 
