@@ -205,7 +205,7 @@ async def get_all_products_availability() -> str:
             stock_text = f"Available • {p['stock']}x" if p["stock"] > 0 else "Out of Stock"
             lines.append(
                 f"<blockquote><b>#{p['id']} {cat['emoji']} {p['name']}</b>\n"
-                f"{stock_text}</blockquote>"
+                f"{stock_icon} {stock_text}</blockquote>"
             )
 
     if len(lines) == 1:
