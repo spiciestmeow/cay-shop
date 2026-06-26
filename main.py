@@ -234,32 +234,23 @@ async def build_products_keyboard() -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(
         "✅ Official Subscriptions",
         callback_data="official_subs",
-        api_kwargs={"style": "default"},
     )]]
 
     pairs = []
     for cat in categories:
         if cat.get("type", "regular") == "regular":
             has_stock = stock_by_cat.get(cat["id"], 0) > 0
+            label = f"{cat['emoji']} {cat['name']}" if has_stock else f"❌ {cat['name']}"
             pairs.append(InlineKeyboardButton(
-                f"{cat['emoji']} {cat['name']}",
+                label,
                 callback_data=f"cat_{cat['id']}",
-                api_kwargs={"style": "default" if has_stock else "destructive"},
             ))
 
     for i in range(0, len(pairs), 2):
         rows.append(pairs[i:i + 2])
 
-    rows.append([InlineKeyboardButton(
-        "🟢 What's Available",
-        callback_data="whats_available",
-        api_kwargs={"style": "secondary"},
-    )])
-    rows.append([InlineKeyboardButton(
-        "✕ Close",
-        callback_data="close",
-        api_kwargs={"style": "secondary"},
-    )])
+    rows.append([InlineKeyboardButton("🟢 What's Available", callback_data="whats_available")])
+    rows.append([InlineKeyboardButton("✕ Close", callback_data="close")])
 
     return InlineKeyboardMarkup(rows)
 
