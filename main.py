@@ -527,15 +527,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             # falls through to menu handling
         else:
             prod_id = ud.get("qty_prod_id")
-            await db.clear_session(user_id)
+
+            # Validate first — don't clear session until we know input is good
             try:
                 qty = int(text.strip())
                 if qty < 1:
                     raise ValueError
             except ValueError:
                 await update.message.reply_text("❌ Please enter a valid whole number (e.g. 3):")
-                await db.set_session(user_id, ud)   # restore session so they can retry
-                return
+                return  # session stays intact, user can retry
+
             prod = await db.get_product(prod_id)
             if not prod or prod["stock"] < qty:
                 await update.message.reply_text(
@@ -543,11 +544,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     parse_mode="HTML",
                     reply_markup=MAIN_MENU,
                 )
+                await db.clear_session(user_id)
                 return
+
+            # All good — now clear the session
+            await db.clear_session(user_id)
+
             db_user = await db.get_user(user_id)
             balance = float(db_user.get("balance", 0)) if db_user else 0.0
             price = prod["price"]
-            total = round(price * qty, 2)
             tier = db.get_status_tier(float(db_user.get("total_spent", 0)))
             discount_pct = tier["discount"]
             discounted_unit = round(price * (1 - discount_pct / 100), 2)
