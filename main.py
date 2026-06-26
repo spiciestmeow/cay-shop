@@ -316,13 +316,15 @@ async def admin_categories_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def admin_cat_edit_keyboard(cat_id: int) -> InlineKeyboardMarkup:
+def admin_cat_edit_keyboard(cat_id: int, cat_type: str = "regular") -> InlineKeyboardMarkup:
+    next_type = "official" if cat_type == "regular" else "regular"
+    type_label = "🏷 Set as Official" if cat_type == "regular" else "📦 Set as Regular"
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✏️ Edit Name", callback_data=f"admin_editcat_name_{cat_id}")],
         [InlineKeyboardButton("🎨 Change Emoji", callback_data=f"admin_editcat_emoji_{cat_id}")],
+        [InlineKeyboardButton(type_label, callback_data=f"admin_editcat_type_{cat_id}_{next_type}")],
         [InlineKeyboardButton("⬅️ Back", callback_data="admin_categories")],
     ])
-
 
 async def admin_products_pick_cat_keyboard() -> InlineKeyboardMarkup:
     cats = await db.get_categories()
@@ -2072,12 +2074,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.answer("Category not found.", show_alert=True)
             return
         await query.answer()
+
+        cat_type = cat.get("type", "regular")
         await query.message.edit_text(
             f"✏️ <b>Edit Category</b>\n\n"
-            f"Current: <b>{cat['emoji']} {cat['name']}</b>\n\n"
+            f"Current: <b>{cat['emoji']} {cat['name']}</b>\n"
+            f"Type: <b>{'📦 Official' if cat_type == 'official' else '🏷 Regular'}</b>\n\n"
             f"What would you like to change?",
             parse_mode="HTML",
-            reply_markup=admin_cat_edit_keyboard(cat_id),
+            reply_markup=admin_cat_edit_keyboard(cat_id, cat_type),
         )
         return
 
@@ -2105,6 +2110,32 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
+    if data.startswith("admin_editcat_type_"):
+        parts = data.split("_")
+        cat_id = int(parts[3])
+        new_type = parts[4]  # "regular" or "official"
+        cat = await db.get_category(cat_id)
+        if not cat:
+            await query.answer("Category not found.", show_alert=True)
+            return
+        try:
+            await db.update_category(cat_id, type=new_type)
+        except Exception as e:
+            logger.error(f"Failed to update category type: {e}", exc_info=e)
+            await query.answer("❌ Failed to update type. Please try again.", show_alert=True)
+            return
+        await query.answer(f"✅ Type changed to '{new_type}'!")
+        type_label = "📦 Official" if new_type == "official" else "🏷 Regular"
+        await query.message.edit_text(
+            f"✏️ <b>Edit Category</b>\n\n"
+            f"Current: <b>{cat['emoji']} {cat['name']}</b>\n"
+            f"Type: <b>{type_label}</b>\n\n"
+            f"What would you like to change?",
+            parse_mode="HTML",
+            reply_markup=admin_cat_edit_keyboard(cat_id, new_type),
+        )
+        return
+    
     if data.startswith("admin_delcat_"):
         cat_id = int(data.split("_")[2])
         cat = await db.get_category(cat_id)
