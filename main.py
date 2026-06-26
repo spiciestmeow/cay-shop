@@ -1651,7 +1651,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
         product_buttons = [
             [InlineKeyboardButton(
-                f"{cat_emoji} {p['name']}  {'✅' if p['stock'] > 0 else '❌'} ({p['stock']})",
+                f"{cat_emoji} {p['name']}  ({p['stock']})",
                 callback_data=f"user_prod_{p['id']}"
             )]
             for p in products
