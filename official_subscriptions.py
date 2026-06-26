@@ -43,14 +43,25 @@ async def handle_official_subs(
         return
 
     # Build buttons for each official category
+    all_products = await db.get_all_products_flat()
+    stock_by_cat: dict[int, int] = {}
+    for p in all_products:
+        stock_by_cat[p["category_id"]] = stock_by_cat.get(p["category_id"], 0) + p.get("stock", 0)
+
     buttons = []
     for cat in official_cats:
-        buttons.append([InlineKeyboardButton(
+        has_stock = stock_by_cat.get(cat["id"], 0) > 0
+        style = "default" if has_stock else "destructive"  # green if stock, red if not
+        btn = InlineKeyboardButton(
             f"{cat['emoji']} {cat['name']}",
-            callback_data=f"cat_{cat['id']}"
-        )])
+            callback_data=f"cat_{cat['id']}",
+        )
+        btn.api_kwargs = {"style": style}
+        buttons.append([btn])
 
-    buttons.append([InlineKeyboardButton("Back to services", callback_data="back_to_products")])
+    back_btn = InlineKeyboardButton("⬅️ Back to services", callback_data="back_to_products")
+    back_btn.api_kwargs = {"style": "secondary"}  # gray
+    buttons.append([back_btn])
 
     await query.edit_message_text(
         "Choose a product:",
