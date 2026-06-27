@@ -319,19 +319,15 @@ async def admin_categories_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 async def admin_payment_methods_keyboard() -> InlineKeyboardMarkup:
-    labels = {
-        "binance": "💳 Binance Pay",
-        "polygon": "🔗 Polygon (USDT)",
-        "trc20": "🔗 TRC20 (USDT)",
-    }
-    rows = []
-    for method in db.PAYMENT_METHODS:
+    buttons = []
+    for method, label in db.PAYMENT_METHODS.items():
         enabled = await db.is_payment_method_enabled(method)
-        status = "✅ ON" if enabled else "❌ OFF"
-        rows.append([InlineKeyboardButton(
-            f"{labels[method]} — {status}",
+        status = "✅" if enabled else "❌"
+        buttons.append(InlineKeyboardButton(
+            f"{label} {status}",
             callback_data=f"admin_toggle_payment_{method}",
-        )])
+        ))
+    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
     rows.append([InlineKeyboardButton("⬅️ Back", callback_data="admin_main")])
     return InlineKeyboardMarkup(rows)
 
@@ -1477,12 +1473,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     # ── Crypto top-up — gated by admin-controlled toggle. GCash stays open to all users. ──
-    if data in ("payment_binance", "payment_polygon", "payment_trc20"):
+    if data.startswith("payment_"):
         method = data.removeprefix("payment_")
-        enabled = await db.is_payment_method_enabled(method)
-        if not enabled and not is_admin(user_id):
-            await query.answer("🚧 This payment method is currently unavailable.", show_alert=True)
-            return
+        if method in db.PAYMENT_METHODS:
+            enabled = await db.is_payment_method_enabled(method)
+            if not enabled and not is_admin(user_id):
+                await query.answer("🚧 This payment method is currently unavailable.", show_alert=True)
+                return
 
     if data == "payment_gcash":
         await gcash_topup.start_gcash_topup(update, context)
@@ -2177,7 +2174,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
         currently_enabled = await db.is_payment_method_enabled(method)
         await db.set_payment_method_enabled(method, not currently_enabled)
-        await query.answer(f"{method.capitalize()} is now {'ON' if not currently_enabled else 'OFF'}.")
+        label = db.PAYMENT_METHODS[method]
+        await query.answer(f"{label} is now {'ON' if not currently_enabled else 'OFF'}.")
         await query.message.edit_text(
             "💳 <b>Payment Methods</b>\n\n"
             "Tap a method to turn it ON or OFF for regular users.\n"

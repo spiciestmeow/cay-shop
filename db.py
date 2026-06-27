@@ -113,15 +113,32 @@ async def get_php_usd_rate() -> float:
 # ─── PAYMENT METHOD TOGGLES ───────────────────────────────────────────────────
 #
 # Stored as rows in cay_shop_settings, e.g. key="payment_trc20_enabled", value="1"/"0".
-# Defaults to OFF (disabled) if no row exists yet, matching current behavior.
+#
+# Single source of truth: to add a new payment gateway later, just add one
+# entry below (callback_data for it must be "payment_<key>"). It will
+# automatically appear in the admin "Payment Methods" toggle screen and be
+# gated the same way — no other code changes needed.
 
-PAYMENT_METHODS = ("binance", "polygon", "trc20")
+PAYMENT_METHODS = {
+    "binance": "💳 Binance Pay",
+    "polygon": "🔗 Polygon (USDT)",
+    "trc20":   "🔗 TRC20 (USDT)",
+    "gcash":   "🇵🇭 GCash",
+    "stars":   "⭐ Telegram Stars",
+}
+
+# binance/polygon/trc20 were previously admin-only, so they default to OFF.
+# gcash/stars were previously open to everyone, so they default to ON —
+# this preserves current live behavior until an admin explicitly changes it.
+_DEFAULT_ON_METHODS = {"gcash", "stars"}
 
 def _payment_setting_key(method: str) -> str:
     return f"payment_{method}_enabled"
 
 async def is_payment_method_enabled(method: str) -> bool:
     raw = await get_setting(_payment_setting_key(method))
+    if raw is None:
+        return method in _DEFAULT_ON_METHODS
     return raw == "1"
 
 async def set_payment_method_enabled(method: str, enabled: bool) -> None:
