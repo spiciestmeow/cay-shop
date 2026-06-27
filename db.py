@@ -74,15 +74,14 @@ async def get_lang_db(user_id: int, context) -> str:
     """
     if context.user_data.get("lang"):
         return context.user_data["lang"]
-    import db
-    user = await db.get_user(user_id)
+    # Call get_user directly — no import needed, we're already in db.py
+    user = await get_user(user_id)
     if user and user.get("lang"):
         context.user_data["lang"] = user["lang"]
         return user["lang"]
     return "en"
 
 async def save_user_lang(user_id: int, lang_code: str) -> None:
-    """Save chosen language to the users table so it survives restarts."""
     c = _client()
     await _run(c.table(USERS_TABLE).update({"lang": lang_code, "lang_set": True}).eq("user_id", user_id))
 
