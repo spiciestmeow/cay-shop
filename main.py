@@ -456,11 +456,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # Show language picker the very first time
     if not context.user_data.get("lang"):
-        await update.message.reply_text(
-            "🌐 Please choose your language:",
-            reply_markup=lang.LANG_PICKER_KEYBOARD,
-        )
-        return
+        if not db_user or not db_user.get("lang_set"):
+            await update.message.reply_text(
+                "🌐 Please choose your language:",
+                reply_markup=lang.LANG_PICKER_KEYBOARD,
+            )
+            return
+        context.user_data["lang"] = db_user["lang"]
 
     args = context.args  # python-telegram-bot populates this from
                         # "/start ref_XXXX"

@@ -84,7 +84,7 @@ async def get_lang_db(user_id: int, context) -> str:
 async def save_user_lang(user_id: int, lang_code: str) -> None:
     """Save chosen language to the users table so it survives restarts."""
     c = _client()
-    await _run(c.table(USERS_TABLE).update({"lang": lang_code}).eq("user_id", user_id))
+    await _run(c.table(USERS_TABLE).update({"lang": lang_code, "lang_set": True}).eq("user_id", user_id))
 
 async def get_setting(key: str) -> str | None:
     cached = _cache_get(f"setting:{key}")
