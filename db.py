@@ -110,6 +110,23 @@ async def get_php_usd_rate() -> float:
     except (ValueError, TypeError):
         return DEFAULT_PHP_TO_USD_RATE
 
+# ─── PAYMENT METHOD TOGGLES ───────────────────────────────────────────────────
+#
+# Stored as rows in cay_shop_settings, e.g. key="payment_trc20_enabled", value="1"/"0".
+# Defaults to OFF (disabled) if no row exists yet, matching current behavior.
+
+PAYMENT_METHODS = ("binance", "polygon", "trc20")
+
+def _payment_setting_key(method: str) -> str:
+    return f"payment_{method}_enabled"
+
+async def is_payment_method_enabled(method: str) -> bool:
+    raw = await get_setting(_payment_setting_key(method))
+    return raw == "1"
+
+async def set_payment_method_enabled(method: str, enabled: bool) -> None:
+    await set_setting(_payment_setting_key(method), "1" if enabled else "0")
+
 # ─── CATEGORIES ──────────────────────────────────────────────────────────────
 
 async def get_categories() -> list[dict]:

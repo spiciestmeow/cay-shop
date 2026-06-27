@@ -297,6 +297,7 @@ def admin_main_keyboard():
         [InlineKeyboardButton("🎫 Generate Redeem Code", callback_data="admin_gen_redeem")],
         [InlineKeyboardButton("➕ Add Balance",          callback_data="admin_add_balance")],
         [InlineKeyboardButton("⚙️ Bot Settings",         callback_data="admin_settings")],
+        [InlineKeyboardButton("💳 Payment Methods",      callback_data="admin_payment_methods")],
         [InlineKeyboardButton("📋 Edit Bot Policy",       callback_data="admin_edit_policy")],
         [InlineKeyboardButton("🚫 Ban / Unban User",      callback_data="ban_start")],
         [InlineKeyboardButton("💳 Pending GCash",          callback_data="pending_gcash_list")],
@@ -314,6 +315,23 @@ async def admin_categories_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🗑 Delete", callback_data=f"admin_delcat_{cat['id']}"),
         ])
     rows.append([InlineKeyboardButton("➕ Add Category", callback_data="admin_addcat")])
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="admin_main")])
+    return InlineKeyboardMarkup(rows)
+
+async def admin_payment_methods_keyboard() -> InlineKeyboardMarkup:
+    labels = {
+        "binance": "💳 Binance Pay",
+        "polygon": "🔗 Polygon (USDT)",
+        "trc20": "🔗 TRC20 (USDT)",
+    }
+    rows = []
+    for method in db.PAYMENT_METHODS:
+        enabled = await db.is_payment_method_enabled(method)
+        status = "✅ ON" if enabled else "❌ OFF"
+        rows.append([InlineKeyboardButton(
+            f"{labels[method]} — {status}",
+            callback_data=f"admin_toggle_payment_{method}",
+        )])
     rows.append([InlineKeyboardButton("⬅️ Back", callback_data="admin_main")])
     return InlineKeyboardMarkup(rows)
 
@@ -1458,9 +1476,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
-    # ── Crypto/Stars top-up — admin only for now. GCash stays open to all users. ──
+    # ── Crypto top-up — gated by admin-controlled toggle. GCash stays open to all users. ──
     if data in ("payment_binance", "payment_polygon", "payment_trc20"):
-        if not is_admin(user_id):
+        method = data.removeprefix("payment_")
+        enabled = await db.is_payment_method_enabled(method)
+        if not enabled and not is_admin(user_id):
             await query.answer("🚧 This payment method is currently unavailable.", show_alert=True)
             return
 
@@ -2135,6 +2155,36 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 [InlineKeyboardButton("💱 Set GCash Rate", callback_data="admin_set_gcash_rate")],
                 [InlineKeyboardButton("⬅️ Back", callback_data="admin_main")],
             ]),
+        )
+        return
+
+    if data == "admin_payment_methods":
+        await query.answer()
+        await query.message.edit_text(
+            "💳 <b>Payment Methods</b>\n\n"
+            "Tap a method to turn it ON or OFF for regular users.\n"
+            "When OFF, users see \"This payment method is currently unavailable.\"\n"
+            "<i>Admins can always access every method regardless of this setting, for testing.</i>",
+            parse_mode="HTML",
+            reply_markup=await admin_payment_methods_keyboard(),
+        )
+        return
+
+    if data.startswith("admin_toggle_payment_"):
+        method = data.removeprefix("admin_toggle_payment_")
+        if method not in db.PAYMENT_METHODS:
+            await query.answer("Unknown method.", show_alert=True)
+            return
+        currently_enabled = await db.is_payment_method_enabled(method)
+        await db.set_payment_method_enabled(method, not currently_enabled)
+        await query.answer(f"{method.capitalize()} is now {'ON' if not currently_enabled else 'OFF'}.")
+        await query.message.edit_text(
+            "💳 <b>Payment Methods</b>\n\n"
+            "Tap a method to turn it ON or OFF for regular users.\n"
+            "When OFF, users see \"This payment method is currently unavailable.\"\n"
+            "<i>Admins can always access every method regardless of this setting, for testing.</i>",
+            parse_mode="HTML",
+            reply_markup=await admin_payment_methods_keyboard(),
         )
         return
 
